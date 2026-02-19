@@ -6,21 +6,39 @@ import numpy as np
 from datetime import datetime
 
 # --- PAGE SETUP ---
-# This makes the app look good on mobile
 st.set_page_config(page_title="ETF Seasonality", layout="centered")
 
-st.title("📈 ETF Weekly Seasonality")
-st.markdown("Analyze historical weekly average returns for any ETF or stock.")
+st.title("📈 ETF Seasonality Dashboard")
+st.markdown("Analyze historical average returns for any ETF or stock.")
 
-# --- USER INPUT ---
-# Creates a text box on the website. Defaults to "QQQ".
-ticker = st.text_input("Enter Ticker Symbol:", value="QQQ").upper()
+# --- USER CONTROLS ---
+# Put the inputs side-by-side using Streamlit columns
+col1, col2 = st.columns(2)
+
+with col1:
+    ticker = st.text_input("Enter Ticker Symbol:", value="QQQ").upper()
+
+with col2:
+    # --- NEW: The Toggle Switch ---
+    period_type = st.radio("Select Timeframe:", ["Weekly", "Monthly"], horizontal=True)
+
+# Set dynamic variables based on the toggle
+if period_type == "Weekly":
+    yf_interval = "1wk"
+    time_col = "Week"
+    x_label = "Week Number of the Year (1-52)"
+    current_time_val = datetime.now().isocalendar()[1]
+else:
+    yf_interval = "1mo"
+    time_col = "Month"
+    x_label = "Month of the Year (1-12)"
+    current_time_val = datetime.now().month
 
 # --- DATA FETCHING ---
-# We use a spinner to show the user that data is loading
-with st.spinner(f"Fetching data for {ticker}..."):
+with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
     try:
-        data = yf.download(ticker, start="2010-01-01", interval="1wk")
+        # Pass the dynamic interval to yfinance
+        data = yf.download(ticker, start="2010-01-01", interval=yf_interval)
         
         if data.empty:
             st.error("No data found. Please check the ticker symbol.")
@@ -32,8 +50,14 @@ with st.spinner(f"Fetching data for {ticker}..."):
                 df['Close'] = data['Close']
 
             df['ROC'] = df['Close'].pct_change() * 100
-            df['Year'] = df.index.isocalendar().year
-            df['Week'] = df.index.isocalendar().week
+            
+            # --- NEW: Dynamic Date Extraction ---
+            if period_type == "Weekly":
+                df['Year'] = df.index.isocalendar().year
+                df[time_col] = df.index.isocalendar().week
+            else:
+                df['Year'] = df.index.year
+                df[time_col] = df.index.month
 
             current_year = datetime.now().year
             df_5yr = df[df['Year'] > (current_year - 5)]
@@ -45,10 +69,14 @@ with st.spinner(f"Fetching data for {ticker}..."):
             background_color = '#1E1E1E'
 
             def plot_roc_bars(ax, dataset, title):
-                grid = dataset.pivot_table(values='ROC', index='Week', columns='Year')
-                if 53 in grid.index and grid.loc[53].isna().sum() > (len(grid.columns) / 2):
-                    grid = grid.drop(index=53)
-                    
+                # Pivot dynamically based on Week or Month
+                grid = dataset.pivot_table(values='ROC', index=time_col, columns='Year')
+                
+                # Only try to drop week 53 if we are looking at Weekly data
+                if period_type == "Weekly" and 53 in grid.index:
+                    if grid.loc[53].isna().sum() > (len(grid.columns) / 2):
+                        grid = grid.drop(index=53)
+                        
                 grid['Average_ROC'] = grid.mean(axis=1)
                 x_vals = np.array(grid.index.astype(int))
                 y_vals = np.array(grid['Average_ROC'])
@@ -57,11 +85,13 @@ with st.spinner(f"Fetching data for {ticker}..."):
                 ax.bar(x_vals, y_vals, color=colors, edgecolor='none')
                 ax.axhline(0, color='white', linewidth=0.8, alpha=0.5)
                 
-                current_week = datetime.now().isocalendar()[1]
-                ax.axvline(x=current_week, color='#FF4444', linestyle='-', linewidth=1.5, alpha=0.8, label=f'Current Week ({current_week})')
+                # Draw the dynamic red line
+                ax.axvline(x=current_time_val, color='#FF4444', linestyle='-', linewidth=1.5, alpha=0.8, label=f'Current {time_col} ({current_time_val})')
                 
                 ax.set_title(title, fontsize=12, fontweight='bold', color='white', pad=10)
                 ax.set_ylabel('Avg ROC (%)', fontsize=9, color='lightgray')
+                
+                # Ensure every tick is shown (1-12 or 1-52)
                 ax.set_xticks(x_vals)
                 ax.tick_params(axis='x', labelsize=8, colors='lightgray')
                 ax.tick_params(axis='y', labelsize=8, colors='lightgray')
@@ -72,19 +102,17 @@ with st.spinner(f"Fetching data for {ticker}..."):
                 ax.spines['left'].set_color('gray')
                 ax.spines['bottom'].set_color('gray')
                 ax.set_facecolor(background_color)
-                ax.legend(loc='upper right', fontsize=8, framealpha=0.2, facecolor=background_color)
+                ax.legend(loc='upper left', fontsize=8, framealpha=0.2, facecolor=background_color)
 
             fig, axes = plt.subplots(nrows=3, ncols=1, figsize=(10, 12), facecolor=background_color)
 
-            plot_roc_bars(axes[0], df_5yr, f"{ticker} 5-Year Average Weekly ROC")
-            plot_roc_bars(axes[1], df_10yr, f"{ticker} 10-Year Average Weekly ROC")
-            plot_roc_bars(axes[2], df_max, f"{ticker} Max (Since 2010) Average Weekly ROC")
+            plot_roc_bars(axes[0], df_5yr, f"{ticker} 5-Year Average {period_type} ROC")
+            plot_roc_bars(axes[1], df_10yr, f"{ticker} 10-Year Average {period_type} ROC")
+            plot_roc_bars(axes[2], df_max, f"{ticker} Max (Since 2010) Average {period_type} ROC")
 
-            axes[2].set_xlabel('Week Number of the Year (1-52)', fontsize=10, color='lightgray', labelpad=10)
+            axes[2].set_xlabel(x_label, fontsize=10, color='lightgray', labelpad=10)
             plt.tight_layout(pad=3.0)
 
-            # --- DISPLAY ON WEBSITE ---
-            # Instead of plt.show(), we pass the figure to Streamlit
             st.pyplot(fig)
 
     except Exception as e:
