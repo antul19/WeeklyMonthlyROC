@@ -9,9 +9,9 @@ from datetime import datetime
 st.set_page_config(page_title="ETF Seasonality", layout="centered")
 
 st.title("📈 ETF Seasonality Dashboard")
-st.markdown("Analyze historical averages, win rates, and current year tracking.")
+st.markdown("Analyze historical averages, win rates, and cumulative trends.")
 
-st.info("**💡 What is Win Rate?** The Win Rate shows the percentage of time this specific week or month historically ended with a positive return. *Example: A high average return but a low Win Rate (e.g., 20%) means a single freak outlier year skewed the data, making it a low-probability trade.*")
+st.info("**💡 What is Win Rate?** The Win Rate shows the percentage of time this specific week/month historically ended with a positive return.")
 
 # --- USER CONTROLS ---
 col1, col2, col3 = st.columns(3)
@@ -70,13 +70,13 @@ with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
             df_10yr = df[df['Year'] >= (current_year - 10)]
             df_max = df
 
-            # --- PLOTTING LOGIC ---
+            # --- PLOTTING LOGIC SETUP ---
             plt.style.use('dark_background')
             background_color = '#1E1E1E'
 
+            # --- FUNCTION 1: THE BAR CHART (Existing) ---
             def plot_roc_bars(ax, dataset, title, short_label):
                 grid = dataset.pivot_table(values='ROC', index=time_col, columns='Year')
-                
                 if period_type == "Weekly" and 53 in grid.index:
                     if grid.loc[53].isna().sum() > (len(grid.columns) / 2):
                         grid = grid.drop(index=53)
@@ -104,13 +104,11 @@ with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
                             y_pos = y_vals[i]
                             wr_text = f"{int(win_rates[i])}%"
                             rot = 90 if period_type == "Weekly" else 0
-                            
                             if y_pos > 0:
                                 ax.text(x, y_pos + offset, wr_text, ha='center', va='bottom', fontsize=7, color='white', rotation=rot, zorder=4)
                             else:
                                 ax.text(x, y_pos - offset, wr_text, ha='center', va='top', fontsize=7, color='white', rotation=rot, zorder=4)
 
-                # Store current year data to return it for the CSV
                 current_yr_arr = np.full(len(x_vals), np.nan)
                 if current_year in grid.columns:
                     current_year_data = grid[current_year]
@@ -118,9 +116,7 @@ with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
                             linestyle='-', linewidth=2, label=f'{current_year} Actual ROC', zorder=3)
                     current_yr_arr = np.array(current_year_data)
                 
-                ax.axvline(x=current_time_val, color='#FF4444', linestyle='--', linewidth=1.5, 
-                           alpha=0.8, label=f'Current {time_col}', zorder=0)
-                
+                ax.axvline(x=current_time_val, color='#FF4444', linestyle='--', linewidth=1.5, alpha=0.8, label=f'Current {time_col}', zorder=0)
                 ax.set_title(title, fontsize=12, fontweight='bold', color='white', pad=15)
                 ax.set_ylabel('ROC (%)', fontsize=9, color='lightgray')
                 
@@ -131,54 +127,107 @@ with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
                 ax.tick_params(axis='x', labelsize=8, colors='lightgray')
                 ax.tick_params(axis='y', labelsize=8, colors='lightgray')
                 ax.grid(axis='y', linestyle=':', color='gray', alpha=0.3)
-                
                 ax.spines['top'].set_visible(False)
                 ax.spines['right'].set_visible(False)
                 ax.spines['left'].set_color('gray')
                 ax.spines['bottom'].set_color('gray')
                 ax.set_facecolor(background_color)
-                
                 ax.legend(loc='upper left', fontsize=8, framealpha=0.2, facecolor=background_color)
                 
-                # --- NEW: Return a DataFrame of the math we just did! ---
                 output_df = pd.DataFrame({
                     f'{short_label} Avg ROC (%)': np.round(y_vals, 2),
                     f'{short_label} Win Rate (%)': np.round(win_rates, 1)
                 }, index=grid.index)
-                
-                # Add current year data only to the last dataframe to avoid duplicates
                 if short_label == "Max":
                     output_df[f'{current_year} Actual ROC (%)'] = np.round(current_yr_arr, 2)
-                    
                 return output_df
 
-            fig, axes = plt.subplots(nrows=3, ncols=1, figsize=(11, 14), facecolor=background_color, dpi=300)
+            # --- FUNCTION 2: THE CUMULATIVE LINE CHART (New!) ---
+            def plot_cumulative_lines(ax, dataset, title):
+                grid = dataset.pivot_table(values='ROC', index=time_col, columns='Year')
+                if period_type == "Weekly" and 53 in grid.index:
+                    if grid.loc[53].isna().sum() > (len(grid.columns) / 2):
+                        grid = grid.drop(index=53)
+                
+                if current_year in grid.columns:
+                    hist_grid = grid.drop(columns=[current_year])
+                else:
+                    hist_grid = grid
+                
+                # Math: Calculate average return, then compound it sequentially
+                avg_roc = hist_grid.mean(axis=1)
+                cum_avg_roc = ((1 + avg_roc / 100).cumprod() - 1) * 100
+                
+                x_vals = np.array(grid.index.astype(int))
+                
+                # Draw Historical Cumulative Line (Neon Blue for visibility)
+                ax.plot(x_vals, cum_avg_roc, color='#00E5FF', linewidth=2.5, label='Historical Cumulative Path', zorder=2)
+                ax.axhline(0, color='white', linewidth=0.8, alpha=0.5, zorder=1)
+                
+                # Draw Current Year Cumulative Line
+                if current_year in grid.columns:
+                    # Drop future empty weeks so the line stops cleanly
+                    current_roc = grid[current_year].dropna() 
+                    if not current_roc.empty:
+                        cum_current_roc = ((1 + current_roc / 100).cumprod() - 1) * 100
+                        ax.plot(current_roc.index.astype(int), cum_current_roc, color='#FFFFFF', 
+                                marker='o', markersize=4, linestyle='-', linewidth=2.5, label=f'{current_year} Actual Path', zorder=3)
+                
+                # Current week/month vertical line
+                ax.axvline(x=current_time_val, color='#FF4444', linestyle='--', linewidth=1.5, alpha=0.8, label=f'Current {time_col}', zorder=0)
+                
+                # Formatting
+                ax.set_title(title, fontsize=12, fontweight='bold', color='white', pad=15)
+                ax.set_ylabel('Cumulative Return (%)', fontsize=9, color='lightgray')
+                ax.set_xticks(x_vals)
+                ax.tick_params(axis='x', labelsize=8, colors='lightgray')
+                ax.tick_params(axis='y', labelsize=8, colors='lightgray')
+                ax.grid(axis='y', linestyle=':', color='gray', alpha=0.3)
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+                ax.spines['left'].set_color('gray')
+                ax.spines['bottom'].set_color('gray')
+                ax.set_facecolor(background_color)
+                ax.legend(loc='upper left', fontsize=8, framealpha=0.2, facecolor=background_color)
 
-            title_suffix = "| Win Rate % | Current Year" if show_win_rate else "| Current Year"
+            # --- STREAMLIT TABS IMPLEMENTATION ---
+            tab1, tab2 = st.tabs(["📊 Average Returns (Bars)", "📈 Cumulative Trend (Lines)"])
             
-            # --- FIXED: Capture the returned dataframes ---
-            df1 = plot_roc_bars(axes[0], df_5yr, f"{ticker} 5-Year Average {title_suffix}", "5-Yr")
-            df2 = plot_roc_bars(axes[1], df_10yr, f"{ticker} 10-Year Average {title_suffix}", "10-Yr")
-            df3 = plot_roc_bars(axes[2], df_max, f"{ticker} Max (Since 2010) Average {title_suffix}", "Max")
+            # TAB 1: The original Bar Charts
+            with tab1:
+                fig1, axes1 = plt.subplots(nrows=3, ncols=1, figsize=(11, 14), facecolor=background_color, dpi=300)
+                title_suffix = "| Win Rate % | Current Year" if show_win_rate else "| Current Year"
+                
+                df1 = plot_roc_bars(axes1[0], df_5yr, f"{ticker} 5-Year Average {title_suffix}", "5-Yr")
+                df2 = plot_roc_bars(axes1[1], df_10yr, f"{ticker} 10-Year Average {title_suffix}", "10-Yr")
+                df3 = plot_roc_bars(axes1[2], df_max, f"{ticker} Max (Since 2010) Average {title_suffix}", "Max")
 
-            axes[2].set_xlabel(x_label, fontsize=10, color='lightgray', labelpad=10)
-            plt.tight_layout(pad=3.0)
+                axes1[2].set_xlabel(x_label, fontsize=10, color='lightgray', labelpad=10)
+                plt.tight_layout(pad=3.0)
+                st.pyplot(fig1, width='stretch')
+                
+            # TAB 2: The new Cumulative Line Charts
+            with tab2:
+                fig2, axes2 = plt.subplots(nrows=3, ncols=1, figsize=(11, 14), facecolor=background_color, dpi=300)
+                
+                plot_cumulative_lines(axes2[0], df_5yr, f"{ticker} 5-Year Cumulative Seasonality")
+                plot_cumulative_lines(axes2[1], df_10yr, f"{ticker} 10-Year Cumulative Seasonality")
+                plot_cumulative_lines(axes2[2], df_max, f"{ticker} Max (Since 2010) Cumulative Seasonality")
 
-            st.pyplot(fig, width='stretch')
-            
-            # --- NEW: CSV DOWNLOAD BUTTON ---
-            # 1. Combine all three dataframes side-by-side
+                axes2[2].set_xlabel(x_label, fontsize=10, color='lightgray', labelpad=10)
+                plt.tight_layout(pad=3.0)
+                st.pyplot(fig2, width='stretch')
+
+            # --- CSV DOWNLOAD (Placed outside tabs so it's always accessible) ---
             combined_data = pd.concat([df1, df2, df3], axis=1)
             combined_data.index.name = time_col
             
-            # 2. Convert dataframe to CSV format
             @st.cache_data
             def convert_df_to_csv(df):
                 return df.to_csv().encode('utf-8')
                 
             csv_data = convert_df_to_csv(combined_data)
             
-            # 3. Create the button right beneath the charts
             st.markdown("### 📊 Raw Data Export")
             st.download_button(
                 label="📥 Download Data as CSV",
