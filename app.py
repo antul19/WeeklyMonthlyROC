@@ -37,9 +37,6 @@ else:
     x_label = "Month of the Year (1-12)"
     current_time_val = datetime.now().month
 
-# --- NEW: LIGHTNING-FAST CACHING ---
-# ttl=3600 tells Streamlit to hold this data in memory for 1 hour (3600 seconds).
-# After an hour, it will automatically clear the cache and fetch fresh market prices.
 @st.cache_data(ttl=3600)
 def get_historical_data(ticker_symbol, interval):
     return yf.download(ticker_symbol, start="2010-01-01", interval=interval)
@@ -47,7 +44,6 @@ def get_historical_data(ticker_symbol, interval):
 # --- DATA FETCHING ---
 with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
     try:
-        # Instead of calling yf.download directly, we call our new cached function!
         data = get_historical_data(ticker, yf_interval)
         
         if data.empty:
@@ -69,23 +65,29 @@ with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
                 df[time_col] = df.index.month
 
             current_year = datetime.now().year
-            df_5yr = df[df['Year'] > (current_year - 5)]
-            df_10yr = df[df['Year'] > (current_year - 10)]
+            
+            df_5yr = df[df['Year'] >= (current_year - 5)]
+            df_10yr = df[df['Year'] >= (current_year - 10)]
             df_max = df
 
             # --- PLOTTING LOGIC ---
             plt.style.use('dark_background')
             background_color = '#1E1E1E'
 
-            def plot_roc_bars(ax, dataset, title):
+            def plot_roc_bars(ax, dataset, title, short_label):
                 grid = dataset.pivot_table(values='ROC', index=time_col, columns='Year')
                 
                 if period_type == "Weekly" and 53 in grid.index:
                     if grid.loc[53].isna().sum() > (len(grid.columns) / 2):
                         grid = grid.drop(index=53)
                 
-                win_rate_series = (grid > 0).sum(axis=1) / grid.notna().sum(axis=1) * 100
-                grid['Average_ROC'] = grid.mean(axis=1)
+                if current_year in grid.columns:
+                    hist_grid = grid.drop(columns=[current_year])
+                else:
+                    hist_grid = grid
+                
+                win_rate_series = (hist_grid > 0).sum(axis=1) / hist_grid.notna().sum(axis=1) * 100
+                grid['Average_ROC'] = hist_grid.mean(axis=1)
                 
                 x_vals = np.array(grid.index.astype(int))
                 y_vals = np.array(grid['Average_ROC'])
@@ -108,10 +110,13 @@ with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
                             else:
                                 ax.text(x, y_pos - offset, wr_text, ha='center', va='top', fontsize=7, color='white', rotation=rot, zorder=4)
 
+                # Store current year data to return it for the CSV
+                current_yr_arr = np.full(len(x_vals), np.nan)
                 if current_year in grid.columns:
                     current_year_data = grid[current_year]
                     ax.plot(x_vals, current_year_data, color='#FFFFFF', marker='o', markersize=4, 
                             linestyle='-', linewidth=2, label=f'{current_year} Actual ROC', zorder=3)
+                    current_yr_arr = np.array(current_year_data)
                 
                 ax.axvline(x=current_time_val, color='#FF4444', linestyle='--', linewidth=1.5, 
                            alpha=0.8, label=f'Current {time_col}', zorder=0)
@@ -134,19 +139,53 @@ with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
                 ax.set_facecolor(background_color)
                 
                 ax.legend(loc='upper left', fontsize=8, framealpha=0.2, facecolor=background_color)
+                
+                # --- NEW: Return a DataFrame of the math we just did! ---
+                output_df = pd.DataFrame({
+                    f'{short_label} Avg ROC (%)': np.round(y_vals, 2),
+                    f'{short_label} Win Rate (%)': np.round(win_rates, 1)
+                }, index=grid.index)
+                
+                # Add current year data only to the last dataframe to avoid duplicates
+                if short_label == "Max":
+                    output_df[f'{current_year} Actual ROC (%)'] = np.round(current_yr_arr, 2)
+                    
+                return output_df
 
             fig, axes = plt.subplots(nrows=3, ncols=1, figsize=(11, 14), facecolor=background_color, dpi=300)
 
             title_suffix = "| Win Rate % | Current Year" if show_win_rate else "| Current Year"
-            plot_roc_bars(axes[0], df_5yr, f"{ticker} 5-Year Average {title_suffix}")
-            plot_roc_bars(axes[1], df_10yr, f"{ticker} 10-Year Average {title_suffix}")
-            plot_roc_bars(axes[2], df_max, f"{ticker} Max (Since 2010) Average {title_suffix}")
+            
+            # --- FIXED: Capture the returned dataframes ---
+            df1 = plot_roc_bars(axes[0], df_5yr, f"{ticker} 5-Year Average {title_suffix}", "5-Yr")
+            df2 = plot_roc_bars(axes[1], df_10yr, f"{ticker} 10-Year Average {title_suffix}", "10-Yr")
+            df3 = plot_roc_bars(axes[2], df_max, f"{ticker} Max (Since 2010) Average {title_suffix}", "Max")
 
             axes[2].set_xlabel(x_label, fontsize=10, color='lightgray', labelpad=10)
             plt.tight_layout(pad=3.0)
 
             st.pyplot(fig, width='stretch')
+            
+            # --- NEW: CSV DOWNLOAD BUTTON ---
+            # 1. Combine all three dataframes side-by-side
+            combined_data = pd.concat([df1, df2, df3], axis=1)
+            combined_data.index.name = time_col
+            
+            # 2. Convert dataframe to CSV format
+            @st.cache_data
+            def convert_df_to_csv(df):
+                return df.to_csv().encode('utf-8')
+                
+            csv_data = convert_df_to_csv(combined_data)
+            
+            # 3. Create the button right beneath the charts
+            st.markdown("### 📊 Raw Data Export")
+            st.download_button(
+                label="📥 Download Data as CSV",
+                data=csv_data,
+                file_name=f"{ticker}_{period_type}_Seasonality_Data.csv",
+                mime="text/csv",
+            )
 
     except Exception as e:
         st.error(f"An error occurred: {e}")
-
