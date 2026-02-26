@@ -25,6 +25,8 @@ with col2:
 with col3:
     st.write("") 
     show_win_rate = st.checkbox("Show Win Rate %", value=True)
+    # --- NEW: Toggle for the Spaghetti Chart ---
+    show_spaghetti = st.checkbox("Show All Past Years", value=True)
 
 if period_type == "Weekly":
     yf_interval = "1wk"
@@ -74,13 +76,14 @@ with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
             plt.style.use('dark_background')
             background_color = '#1E1E1E'
 
-            # --- FUNCTION 1: THE BAR CHART (Existing) ---
+            # --- FUNCTION 1: THE BAR CHART ---
             def plot_roc_bars(ax, dataset, title, short_label):
                 grid = dataset.pivot_table(values='ROC', index=time_col, columns='Year')
                 if period_type == "Weekly" and 53 in grid.index:
                     if grid.loc[53].isna().sum() > (len(grid.columns) / 2):
                         grid = grid.drop(index=53)
                 
+                # Prevent Data Leakage
                 if current_year in grid.columns:
                     hist_grid = grid.drop(columns=[current_year])
                 else:
@@ -142,7 +145,7 @@ with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
                     output_df[f'{current_year} Actual ROC (%)'] = np.round(current_yr_arr, 2)
                 return output_df
 
-            # --- FUNCTION 2: THE CUMULATIVE LINE CHART (New!) ---
+            # --- FUNCTION 2: THE CUMULATIVE SPAGHETTI CHART ---
             def plot_cumulative_lines(ax, dataset, title):
                 grid = dataset.pivot_table(values='ROC', index=time_col, columns='Year')
                 if period_type == "Weekly" and 53 in grid.index:
@@ -154,19 +157,26 @@ with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
                 else:
                     hist_grid = grid
                 
-                # Math: Calculate average return, then compound it sequentially
+                # --- NEW: Conditionally plot the Spaghetti lines based on the toggle ---
+                if show_spaghetti:
+                    for yr in hist_grid.columns:
+                        yr_data = hist_grid[yr].dropna()
+                        if not yr_data.empty:
+                            cum_yr_data = ((1 + yr_data / 100).cumprod() - 1) * 100
+                            ax.plot(yr_data.index.astype(int), cum_yr_data, color='white', alpha=0.15, linewidth=1, zorder=1)
+
+                # Calculate historical average return, then compound it
                 avg_roc = hist_grid.mean(axis=1)
                 cum_avg_roc = ((1 + avg_roc / 100).cumprod() - 1) * 100
                 
                 x_vals = np.array(grid.index.astype(int))
                 
-                # Draw Historical Cumulative Line (Neon Blue for visibility)
-                ax.plot(x_vals, cum_avg_roc, color='#00E5FF', linewidth=2.5, label='Historical Cumulative Path', zorder=2)
-                ax.axhline(0, color='white', linewidth=0.8, alpha=0.5, zorder=1)
+                # Draw Historical Average Cumulative Line (Neon Blue)
+                ax.plot(x_vals, cum_avg_roc, color='#00E5FF', linewidth=3, label='Historical Average Path', zorder=2)
+                ax.axhline(0, color='white', linewidth=0.8, alpha=0.5, zorder=0)
                 
                 # Draw Current Year Cumulative Line
                 if current_year in grid.columns:
-                    # Drop future empty weeks so the line stops cleanly
                     current_roc = grid[current_year].dropna() 
                     if not current_roc.empty:
                         cum_current_roc = ((1 + current_roc / 100).cumprod() - 1) * 100
@@ -188,7 +198,11 @@ with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
                 ax.spines['left'].set_color('gray')
                 ax.spines['bottom'].set_color('gray')
                 ax.set_facecolor(background_color)
-                ax.legend(loc='upper left', fontsize=8, framealpha=0.2, facecolor=background_color)
+                
+                # Keep legend clean, avoid listing every faint line
+                handles, labels = ax.get_legend_handles_labels()
+                by_label = dict(zip(labels, handles))
+                ax.legend(by_label.values(), by_label.keys(), loc='upper left', fontsize=8, framealpha=0.2, facecolor=background_color)
 
             # --- STREAMLIT TABS IMPLEMENTATION ---
             tab1, tab2 = st.tabs(["📊 Average Returns (Bars)", "📈 Cumulative Trend (Lines)"])
@@ -218,7 +232,7 @@ with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
                 plt.tight_layout(pad=3.0)
                 st.pyplot(fig2, width='stretch')
 
-            # --- CSV DOWNLOAD (Placed outside tabs so it's always accessible) ---
+            # --- CSV DOWNLOAD ---
             combined_data = pd.concat([df1, df2, df3], axis=1)
             combined_data.index.name = time_col
             
