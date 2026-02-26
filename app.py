@@ -6,7 +6,7 @@ import numpy as np
 from datetime import datetime
 
 # --- PAGE SETUP ---
-st.set_page_config(page_title="ETF Seasonality", layout="centered")
+st.set_page_config(page_title="ETF Seasonality", layout="wide") # Changed to 'wide' to fit the new 4-column layout nicely
 
 st.title("📈 ETF Seasonality Dashboard")
 st.markdown("Analyze historical averages, win rates, and cumulative trends.")
@@ -14,18 +14,23 @@ st.markdown("Analyze historical averages, win rates, and cumulative trends.")
 st.info("**💡 What is Win Rate?** The Win Rate shows the percentage of time this specific week/month historically ended with a positive return.")
 
 # --- USER CONTROLS ---
-col1, col2, col3 = st.columns(3)
+# We now use 4 columns to fit the new Start Year input
+col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     ticker = st.text_input("Enter Ticker:", value="QQQ").upper()
 
 with col2:
-    period_type = st.radio("Timeframe:", ["Weekly", "Monthly"], horizontal=True)
+    # --- NEW: Start Year Input ---
+    # Default is 2010, minimum is 1950, step is 1 year at a time
+    start_year = st.number_input("Start Year (For 'Max' Chart):", value=2010, min_value=1950, max_value=datetime.now().year - 1, step=1)
 
 with col3:
+    period_type = st.radio("Timeframe:", ["Weekly", "Monthly"], horizontal=True)
+
+with col4:
     st.write("") 
     show_win_rate = st.checkbox("Show Win Rate %", value=True)
-    # --- NEW: Toggle for the Spaghetti Chart ---
     show_spaghetti = st.checkbox("Show All Past Years", value=True)
 
 if period_type == "Weekly":
@@ -39,14 +44,16 @@ else:
     x_label = "Month of the Year (1-12)"
     current_time_val = datetime.now().month
 
+# --- UPDATED: Pass the dynamic start_year into the cache function ---
 @st.cache_data(ttl=3600)
-def get_historical_data(ticker_symbol, interval):
-    return yf.download(ticker_symbol, start="2010-01-01", interval=interval)
+def get_historical_data(ticker_symbol, interval, start_yr):
+    return yf.download(ticker_symbol, start=f"{start_yr}-01-01", interval=interval)
 
 # --- DATA FETCHING ---
 with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
     try:
-        data = get_historical_data(ticker, yf_interval)
+        # Pass start_year to the fetch function
+        data = get_historical_data(ticker, yf_interval, start_year)
         
         if data.empty:
             st.error("No data found. Please check the ticker symbol.")
@@ -70,7 +77,7 @@ with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
             
             df_5yr = df[df['Year'] >= (current_year - 5)]
             df_10yr = df[df['Year'] >= (current_year - 10)]
-            df_max = df
+            df_max = df # This is now naturally bounded by whatever start_year the user typed!
 
             # --- PLOTTING LOGIC SETUP ---
             plt.style.use('dark_background')
@@ -83,7 +90,6 @@ with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
                     if grid.loc[53].isna().sum() > (len(grid.columns) / 2):
                         grid = grid.drop(index=53)
                 
-                # Prevent Data Leakage
                 if current_year in grid.columns:
                     hist_grid = grid.drop(columns=[current_year])
                 else:
@@ -157,7 +163,6 @@ with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
                 else:
                     hist_grid = grid
                 
-                # --- NEW: Conditionally plot the Spaghetti lines based on the toggle ---
                 if show_spaghetti:
                     for yr in hist_grid.columns:
                         yr_data = hist_grid[yr].dropna()
@@ -165,17 +170,14 @@ with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
                             cum_yr_data = ((1 + yr_data / 100).cumprod() - 1) * 100
                             ax.plot(yr_data.index.astype(int), cum_yr_data, color='white', alpha=0.15, linewidth=1, zorder=1)
 
-                # Calculate historical average return, then compound it
                 avg_roc = hist_grid.mean(axis=1)
                 cum_avg_roc = ((1 + avg_roc / 100).cumprod() - 1) * 100
                 
                 x_vals = np.array(grid.index.astype(int))
                 
-                # Draw Historical Average Cumulative Line (Neon Blue)
                 ax.plot(x_vals, cum_avg_roc, color='#00E5FF', linewidth=3, label='Historical Average Path', zorder=2)
                 ax.axhline(0, color='white', linewidth=0.8, alpha=0.5, zorder=0)
                 
-                # Draw Current Year Cumulative Line
                 if current_year in grid.columns:
                     current_roc = grid[current_year].dropna() 
                     if not current_roc.empty:
@@ -183,10 +185,8 @@ with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
                         ax.plot(current_roc.index.astype(int), cum_current_roc, color='#FFFFFF', 
                                 marker='o', markersize=4, linestyle='-', linewidth=2.5, label=f'{current_year} Actual Path', zorder=3)
                 
-                # Current week/month vertical line
                 ax.axvline(x=current_time_val, color='#FF4444', linestyle='--', linewidth=1.5, alpha=0.8, label=f'Current {time_col}', zorder=0)
                 
-                # Formatting
                 ax.set_title(title, fontsize=12, fontweight='bold', color='white', pad=15)
                 ax.set_ylabel('Cumulative Return (%)', fontsize=9, color='lightgray')
                 ax.set_xticks(x_vals)
@@ -199,7 +199,6 @@ with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
                 ax.spines['bottom'].set_color('gray')
                 ax.set_facecolor(background_color)
                 
-                # Keep legend clean, avoid listing every faint line
                 handles, labels = ax.get_legend_handles_labels()
                 by_label = dict(zip(labels, handles))
                 ax.legend(by_label.values(), by_label.keys(), loc='upper left', fontsize=8, framealpha=0.2, facecolor=background_color)
@@ -214,7 +213,9 @@ with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
                 
                 df1 = plot_roc_bars(axes1[0], df_5yr, f"{ticker} 5-Year Average {title_suffix}", "5-Yr")
                 df2 = plot_roc_bars(axes1[1], df_10yr, f"{ticker} 10-Year Average {title_suffix}", "10-Yr")
-                df3 = plot_roc_bars(axes1[2], df_max, f"{ticker} Max (Since 2010) Average {title_suffix}", "Max")
+                
+                # --- UPDATED: Dynamic Title using Start Year ---
+                df3 = plot_roc_bars(axes1[2], df_max, f"{ticker} Max (Since {start_year}) Average {title_suffix}", "Max")
 
                 axes1[2].set_xlabel(x_label, fontsize=10, color='lightgray', labelpad=10)
                 plt.tight_layout(pad=3.0)
@@ -226,7 +227,9 @@ with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
                 
                 plot_cumulative_lines(axes2[0], df_5yr, f"{ticker} 5-Year Cumulative Seasonality")
                 plot_cumulative_lines(axes2[1], df_10yr, f"{ticker} 10-Year Cumulative Seasonality")
-                plot_cumulative_lines(axes2[2], df_max, f"{ticker} Max (Since 2010) Cumulative Seasonality")
+                
+                # --- UPDATED: Dynamic Title using Start Year ---
+                plot_cumulative_lines(axes2[2], df_max, f"{ticker} Max (Since {start_year}) Cumulative Seasonality")
 
                 axes2[2].set_xlabel(x_label, fontsize=10, color='lightgray', labelpad=10)
                 plt.tight_layout(pad=3.0)
