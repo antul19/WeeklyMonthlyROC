@@ -9,17 +9,15 @@ from datetime import datetime
 st.set_page_config(page_title="ETF Seasonality", layout="centered")
 
 st.title("📈 ETF Seasonality Dashboard")
-st.markdown("Analyze historical average returns for any ETF or stock.")
+st.markdown("Analyze historical average returns vs. current year performance.")
 
 # --- USER CONTROLS ---
-# Put the inputs side-by-side using Streamlit columns
 col1, col2 = st.columns(2)
 
 with col1:
     ticker = st.text_input("Enter Ticker Symbol:", value="QQQ").upper()
 
 with col2:
-    # --- NEW: The Toggle Switch ---
     period_type = st.radio("Select Timeframe:", ["Weekly", "Monthly"], horizontal=True)
 
 # Set dynamic variables based on the toggle
@@ -37,7 +35,6 @@ else:
 # --- DATA FETCHING ---
 with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
     try:
-        # Pass the dynamic interval to yfinance
         data = yf.download(ticker, start="2010-01-01", interval=yf_interval)
         
         if data.empty:
@@ -51,7 +48,6 @@ with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
 
             df['ROC'] = df['Close'].pct_change() * 100
             
-            # --- NEW: Dynamic Date Extraction ---
             if period_type == "Weekly":
                 df['Year'] = df.index.isocalendar().year
                 df[time_col] = df.index.isocalendar().week
@@ -72,7 +68,6 @@ with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
                 # Pivot dynamically based on Week or Month
                 grid = dataset.pivot_table(values='ROC', index=time_col, columns='Year')
                 
-                # Only try to drop week 53 if we are looking at Weekly data
                 if period_type == "Weekly" and 53 in grid.index:
                     if grid.loc[53].isna().sum() > (len(grid.columns) / 2):
                         grid = grid.drop(index=53)
@@ -81,17 +76,27 @@ with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
                 x_vals = np.array(grid.index.astype(int))
                 y_vals = np.array(grid['Average_ROC'])
                 
+                # 1. Plot the Historical Average Bars
                 colors = ['#555555' if val > 0 else '#BBBBBB' for val in y_vals]
-                ax.bar(x_vals, y_vals, color=colors, edgecolor='none')
-                ax.axhline(0, color='white', linewidth=0.8, alpha=0.5)
+                ax.bar(x_vals, y_vals, color=colors, edgecolor='none', label='Historical Avg', zorder=1)
+                ax.axhline(0, color='white', linewidth=0.8, alpha=0.5, zorder=2)
                 
-                # Draw the dynamic red line
-                ax.axvline(x=current_time_val, color='#FF4444', linestyle='-', linewidth=1.5, alpha=0.8, label=f'Current {time_col} ({current_time_val})')
+                # --- NEW: Plot the Current Year Overlay ---
+                if current_year in grid.columns:
+                    current_year_data = grid[current_year]
+                    # We use a bright gold line (#FFD700) with markers to stand out against the grey bars
+                    # zorder=3 ensures the line is drawn ON TOP of the bars
+                    ax.plot(x_vals, current_year_data, color='#FFD700', marker='o', markersize=4, 
+                            linestyle='-', linewidth=2, label=f'{current_year} Actual ROC', zorder=3)
                 
+                # Draw the dynamic red line for the current week/month
+                ax.axvline(x=current_time_val, color='#FF4444', linestyle='--', linewidth=1.5, 
+                           alpha=0.8, label=f'Current {time_col}', zorder=0)
+                
+                # Formatting
                 ax.set_title(title, fontsize=12, fontweight='bold', color='white', pad=10)
-                ax.set_ylabel('Avg ROC (%)', fontsize=9, color='lightgray')
+                ax.set_ylabel('ROC (%)', fontsize=9, color='lightgray')
                 
-                # Ensure every tick is shown (1-12 or 1-52)
                 ax.set_xticks(x_vals)
                 ax.tick_params(axis='x', labelsize=8, colors='lightgray')
                 ax.tick_params(axis='y', labelsize=8, colors='lightgray')
@@ -102,13 +107,15 @@ with st.spinner(f"Fetching {period_type.lower()} data for {ticker}..."):
                 ax.spines['left'].set_color('gray')
                 ax.spines['bottom'].set_color('gray')
                 ax.set_facecolor(background_color)
+                
+                # Updated Legend to show the new line
                 ax.legend(loc='upper left', fontsize=8, framealpha=0.2, facecolor=background_color)
 
             fig, axes = plt.subplots(nrows=3, ncols=1, figsize=(10, 12), facecolor=background_color)
 
-            plot_roc_bars(axes[0], df_5yr, f"{ticker} 5-Year Average {period_type} ROC")
-            plot_roc_bars(axes[1], df_10yr, f"{ticker} 10-Year Average {period_type} ROC")
-            plot_roc_bars(axes[2], df_max, f"{ticker} Max (Since 2010) Average {period_type} ROC")
+            plot_roc_bars(axes[0], df_5yr, f"{ticker} 5-Year Average vs Current Year")
+            plot_roc_bars(axes[1], df_10yr, f"{ticker} 10-Year Average vs Current Year")
+            plot_roc_bars(axes[2], df_max, f"{ticker} Max (Since 2010) Average vs Current Year")
 
             axes[2].set_xlabel(x_label, fontsize=10, color='lightgray', labelpad=10)
             plt.tight_layout(pad=3.0)
