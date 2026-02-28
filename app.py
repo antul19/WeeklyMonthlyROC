@@ -504,6 +504,12 @@ def make_presidential_cycle_chart(cycle_data: dict) -> go.Figure:
     fig.add_annotation(x=42, y=1.05, yref="paper", text="Year 4 (Elec)", showarrow=False, font=dict(family="IBM Plex Mono", color="#8d9ab0", size=10))
 
     layout = _base_layout("S&P 500: 48-Month Presidential Cycle (Since 1981)", height=550)
+    
+    # --- FIX THE SPACING AT THE TOP ---
+    layout["margin"]["t"] = 80   # Adds extra pixel padding to the top so the title can breathe
+    layout["legend"]["y"] = 1.05 # Nudges the legend down slightly to separate it from the title
+    # ----------------------------------
+    
     layout["xaxis"].update(
         title="Months Since Cycle Start (1-48)", 
         dtick=4, 
