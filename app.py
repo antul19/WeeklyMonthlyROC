@@ -182,15 +182,20 @@ COLORS = {
     "bg":         "#0d0f14",
     "grid":       "#1a1f2e",
     "border":     "#1e2330",
+    
+    # Presidential Cycle Colors
+    "cycle_post": "#FF9900",  # Orange
+    "cycle_mid":  "#B026FF",  # Neon Purple
+    "cycle_pre":  "#39FF14",  # Neon Green
+    "cycle_elec": "#00E5FF",  # Neon Blue
 }
 
 # ─────────────────────────────────────────────
-# DATA FETCHING (Nuclear Cache Breaker + Native Intervals)
+# DATA FETCHING (MAIN)
 # ─────────────────────────────────────────────
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_seasonality_data_v4(ticker: str, start_year: int, timeframe: str) -> pd.DataFrame | None:
     try:
-        # Give a 2-month prior padding to guarantee Period 1 of start_year computes cleanly
         start_str = f"{start_year - 1}-11-01"
         interval = "1wk" if timeframe == "Weekly" else "1mo"
         
@@ -201,7 +206,6 @@ def fetch_seasonality_data_v4(ticker: str, start_year: int, timeframe: str) -> p
         if isinstance(close, pd.DataFrame): close = close.squeeze()
         close = close.dropna()
         
-        # Compute ROC *before* extracting dates
         roc = close.pct_change() * 100
         roc_df = roc.to_frame(name="roc")
         roc_df.index = pd.to_datetime(roc_df.index)
@@ -215,16 +219,40 @@ def fetch_seasonality_data_v4(ticker: str, start_year: int, timeframe: str) -> p
             roc_df["year"] = roc_df.index.year
             roc_df["period"] = roc_df.index.month
             
-        # Filter to the requested timeline
         roc_df = roc_df[roc_df["year"] >= start_year]
         return roc_df
     except Exception:
         return None
 
+# ─────────────────────────────────────────────
+# DATA FETCHING (PRESIDENTIAL CYCLE - HARDCODED SPX)
+# ─────────────────────────────────────────────
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_presidential_cycle_data() -> pd.DataFrame | None:
+    try:
+        # Fetching SPX starting Dec 1982 to ensure Jan 1983 ROC calculates cleanly
+        df = yf.download("^GSPC", start="1982-12-01", interval="1mo", auto_adjust=True, progress=False)
+        if df.empty: return None
+        
+        close = df["Close"]
+        if isinstance(close, pd.DataFrame): close = close.squeeze()
+        close = close.dropna()
+        
+        roc = close.pct_change() * 100
+        roc_df = roc.to_frame(name="roc")
+        roc_df.index = pd.to_datetime(roc_df.index)
+        
+        roc_df["year"] = roc_df.index.year
+        roc_df["period"] = roc_df.index.month
+        
+        # Start pure dataset at 1983
+        roc_df = roc_df[roc_df["year"] >= 1983]
+        return roc_df
+    except Exception:
+        return None
+
 def compute_seasonality(roc_df: pd.DataFrame, timeframe: str, start_year: int) -> dict:
-    # Rigidly enforce the axes
     periods = list(range(1, 53)) if timeframe == "Weekly" else list(range(1, 13))
-    
     today = datetime.today()
     current_period = today.isocalendar().week if timeframe == "Weekly" else today.month
 
@@ -253,6 +281,34 @@ def compute_seasonality(roc_df: pd.DataFrame, timeframe: str, start_year: int) -
         "wr_5": wr_5, "wr_10": wr_10, "wr_max": wr_max, "cur_roc": cur_roc,
         "pivot": pivot, "completed_years": completed_years, 
         "current_period": current_period, "start_year": start_year,
+    }
+
+def compute_cycle_seasonality(roc_df: pd.DataFrame) -> dict:
+    # Presidential Cycle Mapping
+    def get_cycle_name(y):
+        m = y % 4
+        if m == 1: return "Post-Election (Year 1)"
+        elif m == 2: return "Midterm (Year 2)"
+        elif m == 3: return "Pre-Election (Year 3)"
+        else: return "Election (Year 4)"
+        
+    roc_df["cycle"] = roc_df["year"].apply(get_cycle_name)
+    
+    # Exclude current year from historical averages to prevent data leakage
+    hist_data = roc_df[roc_df["year"] < CURRENT_YEAR]
+    cycle_avgs = hist_data.groupby(["cycle", "period"])["roc"].mean().unstack()
+    
+    cur_year_data = roc_df[roc_df["year"] == CURRENT_YEAR]
+    cur_roc = cur_year_data.set_index("period")["roc"] if not cur_year_data.empty else pd.Series(dtype=float)
+    
+    today = datetime.today()
+    current_period = today.month
+    
+    return {
+        "cycle_avgs": cycle_avgs,
+        "cur_roc": cur_roc,
+        "current_period": current_period,
+        "current_cycle_name": get_cycle_name(CURRENT_YEAR)
     }
 
 # ─────────────────────────────────────────────
@@ -298,7 +354,6 @@ def make_bar_chart(data: dict, window_key: str, show_winrate: bool, timeframe: s
 
     bar_colors = [COLORS["pos_bar"] if v >= 0 else COLORS["neg_bar"] for v in avg.reindex(periods).fillna(0)]
     
-    # NEW FIX: Use Plotly's native 'text' property so it never crops annotations
     wr_text = []
     for p in periods:
         w = wr.get(p, np.nan)
@@ -316,7 +371,7 @@ def make_bar_chart(data: dict, window_key: str, show_winrate: bool, timeframe: s
         textangle=-90 if timeframe == "Weekly" else 0,
         marker_color=bar_colors, marker_line_width=0, opacity=1.0,
         name="Hist. Avg", hovertemplate="Period %{x}<br>Avg ROC: %{y:.2f}%<extra></extra>",
-        cliponaxis=False # Forces Plotly to show text even if it overlaps the border
+        cliponaxis=False 
     ))
 
     cur_x = [p for p in periods if p in cur.index]
@@ -343,7 +398,7 @@ def make_bar_chart(data: dict, window_key: str, show_winrate: bool, timeframe: s
     max_p = 52 if timeframe == "Weekly" else 12
     fig.update_layout(**layout)
     fig.update_xaxes(range=[0.5, max_p + 0.5]) 
-    fig.update_yaxes(autorange=True) # Forces Y-axis to dynamically pad for the new text
+    fig.update_yaxes(autorange=True) 
     
     return fig
 
@@ -405,6 +460,68 @@ def make_cumulative_chart(data: dict, window_key: str, show_spaghetti: bool, tim
     max_p = 52 if timeframe == "Weekly" else 12
     fig.update_layout(**layout)
     fig.update_xaxes(range=[-0.5, max_p + 0.5]) 
+    
+    return fig
+
+def make_presidential_cycle_chart(cycle_data: dict) -> go.Figure:
+    cycle_avgs = cycle_data["cycle_avgs"]
+    cur_roc = cycle_data["cur_roc"]
+    cur_period = cycle_data["current_period"]
+    
+    fig = go.Figure()
+    periods = list(range(1, 13))
+    x_anchor = [0] + periods
+    
+    cycle_colors = {
+        "Post-Election (Year 1)": COLORS["cycle_post"],
+        "Midterm (Year 2)":       COLORS["cycle_mid"],
+        "Pre-Election (Year 3)":  COLORS["cycle_pre"],
+        "Election (Year 4)":      COLORS["cycle_elec"]
+    }
+    
+    def _cum(series):
+        cum, running = [0.0], 100.0
+        for p in periods:
+            v = series.get(p, np.nan)
+            if pd.isna(v): cum.append(cum[-1])
+            else:
+                running *= (1 + v / 100)
+                cum.append(running - 100.0)
+        return cum
+        
+    for cycle_name in ["Post-Election (Year 1)", "Midterm (Year 2)", "Pre-Election (Year 3)", "Election (Year 4)"]:
+        if cycle_name in cycle_avgs.index:
+            avg_series = cycle_avgs.loc[cycle_name]
+            fig.add_trace(go.Scatter(
+                x=x_anchor, y=_cum(avg_series),
+                mode="lines", line=dict(color=cycle_colors[cycle_name], width=3.5),
+                name=cycle_name, hovertemplate="Month %{x}<br>Cum. Return: %{y:.2f}%<extra></extra>"
+            ))
+            
+    # Current Year SPX overlay
+    cur_x_available = [p for p in periods if p in cur_roc.index]
+    if cur_x_available:
+        n = len(cur_x_available) + 1
+        cur_series_full = pd.Series({p: cur_roc.get(p, np.nan) for p in periods})
+        fig.add_trace(go.Scatter(
+            x=x_anchor[:n], y=_cum(cur_series_full)[:n],
+            mode="lines+markers", line=dict(color=COLORS["cur_year"], width=3.5),
+            marker=dict(size=8, color=COLORS["cur_year"], line=dict(color="#000000", width=1.5)),
+            name=f"{CURRENT_YEAR} Actual (SPX)", hovertemplate="Month %{x}<br>Actual: %{y:.2f}%<extra></extra>"
+        ))
+        
+    if cur_period in x_anchor:
+        fig.add_vline(x=cur_period, line_dash="dash", line_color=COLORS["vline"], line_width=1.5,
+                      annotation_text=f"Now: Month {cur_period}", annotation_font=dict(family="IBM Plex Mono", size=10, color=COLORS["vline"]),
+                      annotation_position="top right")
+
+    layout = _base_layout("S&P 500 Presidential Cycle Cumulative Seasonality (Since 1983)", height=500)
+    layout["xaxis"]["title"] = "Month of the Year"
+    layout["xaxis"]["dtick"] = 1
+    layout["yaxis"]["ticksuffix"] = "%"
+    
+    fig.update_layout(**layout)
+    fig.update_xaxes(range=[-0.5, 12.5])
     
     return fig
 
@@ -478,7 +595,10 @@ with m4:
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-tab1, tab2 = st.tabs(["📊  Average Returns (Bars)", "〰️  Cumulative Trend (Lines)"])
+# ─────────────────────────────────────────────
+# TABS
+# ─────────────────────────────────────────────
+tab1, tab2, tab3 = st.tabs(["📊  Average Returns (Bars)", "〰️  Cumulative Trend (Lines)", "🇺🇸  Presidential Cycle"])
 
 with tab1:
     for wk, label in [("5", "Last 5 Years"), ("10", "Last 10 Years"), ("max", f"Max (Since {start_year})")]:
@@ -487,6 +607,31 @@ with tab1:
 with tab2:
     for wk, label in [("5", "Last 5 Years — Cumulative"), ("10", "Last 10 Years — Cumulative"), ("max", f"Max (Since {start_year}) — Cumulative")]:
         st.plotly_chart(make_cumulative_chart(data, wk, show_spaghetti, timeframe, label), use_container_width=True, config={"displayModeBar": False})
+
+with tab3:
+    st.markdown("""
+    <div style="background-color: #12151c; border: 1px solid #1e2330; border-radius: 6px; padding: 1rem; margin-bottom: 1rem; font-size: 0.85rem; color: #8d9ab0;">
+    <strong>Note:</strong> This view overrides sidebar settings. It strictly analyzes the <strong>S&P 500 (^GSPC)</strong> on a <strong>Monthly</strong> timeframe starting from <strong>1983</strong> to ensure a statistically significant sample size for all four cycle years.
+    </div>
+    """, unsafe_allow_html=True)
+    
+    with st.spinner("Loading S&P 500 cycle data..."):
+        spx_df = fetch_presidential_cycle_data()
+        if spx_df is not None and not spx_df.empty:
+            cycle_data = compute_cycle_seasonality(spx_df)
+            
+            st.markdown(f"""
+            <div style="text-align: center; margin-bottom: 10px;">
+                <span style="font-family: 'IBM Plex Sans', sans-serif; font-size: 1.1rem; color: #e8ecf5;">
+                    The current year <strong>({CURRENT_YEAR})</strong> is a 
+                    <span style="color: {COLORS['cycle_mid']}; font-weight: bold;">{cycle_data['current_cycle_name']}</span>.
+                </span>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.plotly_chart(make_presidential_cycle_chart(cycle_data), use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.error("Failed to load S&P 500 baseline data for the cycle analysis.")
 
 st.markdown('<div class="section-header">Export</div>', unsafe_allow_html=True)
 st.download_button(label=f"⬇️  Download {ticker} {timeframe} Seasonality Data (.csv)", data=build_csv(data, timeframe), file_name=f"{ticker}_{'weekly' if timeframe == 'Weekly' else 'monthly'}_seasonality_{start_year}-{CURRENT_YEAR}.csv", mime="text/csv")
