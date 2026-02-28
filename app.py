@@ -260,12 +260,16 @@ def fetch_presidential_cycle_data() -> pd.DataFrame | None:
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_century_macro_data() -> pd.DataFrame | None:
     try:
-        df = yf.download("^GSPC", start="1927-12-01", interval="1mo", auto_adjust=False, progress=False)
+        # FIX: Ask for '1d' (daily) data to bypass Yahoo's monthly lookback limits
+        df = yf.download("^GSPC", start="1927-12-01", interval="1d", auto_adjust=False, progress=False)
         if df.empty: return None
         
         close = df["Close"]
         if isinstance(close, pd.DataFrame): close = close.squeeze()
         close = close.dropna()
+        
+        # FIX: Manually crush the daily data into monthly data
+        close = close.resample("ME").last().dropna()
         
         # We are returning the RAW index price to safely plot on a log scale
         price_df = close.to_frame(name="price")
