@@ -1,7 +1,5 @@
 streamlit
-yfinance
 pandas
-matplotlib
-
 numpy
-plotly>=5.18.0
+yfinance
+plotly
