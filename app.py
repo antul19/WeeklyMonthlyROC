@@ -500,15 +500,16 @@ def make_presidential_cycle_chart(cycle_data: dict) -> go.Figure:
     # Vertical markers to delineate the years
     for m, label in [(12, "Year 1 (Post)"), (24, "Year 2 (Mid)"), (36, "Year 3 (Pre)")]:
         fig.add_vline(x=m, line_dash="dot", line_color="#4a5568", line_width=1.5)
-        fig.add_annotation(x=m - 6, y=1.05, yref="paper", text=label, showarrow=False, font=dict(family="IBM Plex Mono", color="#8d9ab0", size=10))
-    fig.add_annotation(x=42, y=1.05, yref="paper", text="Year 4 (Elec)", showarrow=False, font=dict(family="IBM Plex Mono", color="#8d9ab0", size=10))
+        # Moved y down to 1.0 so it sits perfectly on the top border
+        fig.add_annotation(x=m - 6, y=1.0, yref="paper", text=label, showarrow=False, font=dict(family="IBM Plex Mono", color="#8d9ab0", size=10))
+    fig.add_annotation(x=42, y=1.0, yref="paper", text="Year 4 (Elec)", showarrow=False, font=dict(family="IBM Plex Mono", color="#8d9ab0", size=10))
 
-    layout = _base_layout("S&P 500: 48-Month Presidential Cycle (Since 1981)", height=550)
+    layout = _base_layout("S&P 500: 48-Month Presidential Cycle", height=550)
     
-    # --- FIX THE SPACING AT THE TOP ---
-    layout["margin"]["t"] = 80   # Adds extra pixel padding to the top so the title can breathe
-    layout["legend"]["y"] = 1.05 # Nudges the legend down slightly to separate it from the title
-    # ----------------------------------
+    # --- FIX THE SPACING ---
+    layout["margin"]["t"] = 90    # Increased top margin
+    layout["legend"]["y"] = 1.15  # Pushed legend safely above the labels
+    # -----------------------
     
     layout["xaxis"].update(
         title="Months Since Cycle Start (1-48)", 
