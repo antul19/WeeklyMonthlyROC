@@ -440,4 +440,247 @@ def make_cumulative_chart(
             else:
                 running *= (1 + v / 100)
                 cum.append(running - 100.0)
-        return
+        return cum  
+
+    x_anchor = [0] + periods  
+
+    fig = go.Figure()
+
+    if show_spaghetti:
+        pv = data["pivot"]
+        all_years = sorted(pv.index.tolist())
+        if window_key == "5":
+            yrs = all_years[-5:]
+        elif window_key == "10":
+            yrs = all_years[-10:]
+        else:
+            yrs = all_years
+
+        for i, yr in enumerate(yrs):
+            yr_series = pv.loc[yr] if yr in pv.index else pd.Series(dtype=float)
+            cum = _cum(yr_series, periods)
+            fig.add_trace(go.Scatter(
+                x=x_anchor, y=cum,
+                mode="lines",
+                line=dict(color=COLORS["spaghetti"], width=1.5),
+                showlegend=(i == 0),
+                name="Past Years" if i == 0 else None,
+                legendgroup="spaghetti",
+                hoverinfo="skip",
+            ))
+
+    cum_avg = _cum(avg, periods)
+    fig.add_trace(go.Scatter(
+        x=x_anchor, y=cum_avg,
+        mode="lines",
+        line=dict(color=COLORS["avg_line"], width=3.5),
+        name="Hist. Avg (Cum.)",
+        hovertemplate="Period %{x}<br>Cum. Return: %{y:.2f}%<extra></extra>",
+    ))
+
+    cur_x_available = [p for p in periods if p in cur.index]
+    if cur_x_available:
+        cur_series_full = pd.Series({p: cur.get(p, np.nan) for p in periods})
+        cum_cur = _cum(cur_series_full, periods)
+        n = len(cur_x_available) + 1
+        fig.add_trace(go.Scatter(
+            x=x_anchor[:n], y=cum_cur[:n],
+            mode="lines+markers",
+            line=dict(color=COLORS["cur_year"], width=3),
+            marker=dict(size=6, color=COLORS["cur_year"]),
+            name=f"{CURRENT_YEAR} Actual (Cum.)",
+            hovertemplate="Period %{x}<br>Cum. Return: %{y:.2f}%<extra></extra>",
+        ))
+
+    if cur_period in x_anchor:
+        fig.add_vline(
+            x=cur_period, line_dash="dash",
+            line_color=COLORS["vline"], line_width=1.5,
+            annotation_text=f"Now: {cur_period}",
+            annotation_font=dict(family="IBM Plex Mono", size=10, color=COLORS["vline"]),
+            annotation_position="top right",
+        )
+
+    layout = _base_layout(title)
+    layout["xaxis"]["title"] = "Week" if timeframe == "Weekly" else "Month"
+    layout["xaxis"]["dtick"] = 1
+    layout["yaxis"]["ticksuffix"] = "%"
+    fig.update_layout(**layout)
+    return fig
+
+
+# ─────────────────────────────────────────────
+# CSV EXPORT
+# ─────────────────────────────────────────────
+def build_csv(data: dict, timeframe: str) -> bytes:
+    periods = data["periods"]
+    label = "Week" if timeframe == "Weekly" else "Month"
+    rows = []
+    for p in periods:
+        rows.append({
+            label:          p,
+            "Avg_5yr_%":    round(data["avg_5"].get(p, np.nan), 4),
+            "Avg_10yr_%":   round(data["avg_10"].get(p, np.nan), 4),
+            "Avg_Max_%":    round(data["avg_max"].get(p, np.nan), 4),
+            "WinRate_5yr":  round(data["wr_5"].get(p, np.nan), 1),
+            "WinRate_10yr": round(data["wr_10"].get(p, np.nan), 1),
+            "WinRate_Max":  round(data["wr_max"].get(p, np.nan), 1),
+            f"{CURRENT_YEAR}_Actual_%": round(data["cur_roc"].get(p, np.nan), 4),
+        })
+    df = pd.DataFrame(rows)
+    buf = io.BytesIO()
+    df.to_csv(buf, index=False)
+    return buf.getvalue()
+
+
+# ─────────────────────────────────────────────
+# SIDEBAR CONTROLS
+# ─────────────────────────────────────────────
+with st.sidebar:
+    st.markdown('<div class="section-header">Configuration</div>', unsafe_allow_html=True)
+
+    ticker_raw = st.text_input("Ticker Symbol", value="QQQ", max_chars=10)
+    ticker = ticker_raw.upper().strip()
+
+    start_year = st.number_input(
+        "Start Year (Max Lookback)",
+        min_value=1950,
+        max_value=CURRENT_YEAR - 1,
+        value=2010,
+        step=1,
+    )
+
+    st.markdown('<div class="section-header">Timeframe</div>', unsafe_allow_html=True)
+    timeframe = st.radio("", ["Weekly", "Monthly"], horizontal=True, label_visibility="collapsed")
+
+    st.markdown('<div class="section-header">Display Options</div>', unsafe_allow_html=True)
+    show_winrate = st.checkbox("Show Win Rate %", value=True)
+    show_spaghetti = st.checkbox("Show All Past Years", value=True)
+
+    st.markdown("---")
+    st.markdown(
+        '<span style="font-family:IBM Plex Mono;font-size:0.7rem;color:#3a4258;">'
+        "Data via yfinance · Cached 1hr"
+        "</span>",
+        unsafe_allow_html=True,
+    )
+
+# ─────────────────────────────────────────────
+# HEADER
+# ─────────────────────────────────────────────
+col_title, col_gap = st.columns([3, 1])
+with col_title:
+    st.markdown(f'<div class="main-title">📈 ETF Seasonality Dashboard</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sub-title">{ticker} · {timeframe} · Since {start_year}</div>', unsafe_allow_html=True)
+
+# Updated info box to use neutral colors for UP/DOWN text
+st.markdown("""
+<div class="info-box">
+<strong>💡 What is Win Rate?</strong>&nbsp;
+The Win Rate shows the percentage of time a specific week/month historically ended with a <em>positive return</em>.
+Example: A Win Rate of <strong>80%</strong> for Week 12 means that over the lookback window,
+Week 12 went <span style="color:#FFFFFF; font-weight:bold;">UP</span> 8 times and went <span style="color:#BBBBBB; font-weight:bold;">DOWN</span> 2 times.
+Historical averages and win rates are computed from <strong>fully completed years only</strong> — the current year is never included in historical statistics.
+</div>
+""", unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────
+# FETCH & PROCESS DATA
+# ─────────────────────────────────────────────
+with st.spinner(f"Loading {ticker} data…"):
+    raw_df = fetch_data(ticker, start_year)
+
+if raw_df is None or raw_df.empty:
+    st.error(f"❌ Could not retrieve data for **{ticker}**. Please check the ticker symbol and try again.")
+    st.stop()
+
+data = compute_seasonality(raw_df, timeframe, start_year)
+periods = data["periods"]
+
+# ─────────────────────────────────────────────
+# METRICS ROW
+# ─────────────────────────────────────────────
+# Updated Win Rate Badge logic for minimalist styling
+def _wr_badge(val):
+    if pd.isna(val):
+        return "—"
+    color = "#FFFFFF" if val >= 50 else "#BBBBBB"
+    return f'<span style="color:{color};font-family:IBM Plex Mono">{val:.0f}%</span>'
+
+cur_p = data["current_period"]
+avg_max_cur = data["avg_max"].get(cur_p, np.nan)
+wr_max_cur  = data["wr_max"].get(cur_p, np.nan)
+actual_cur  = data["cur_roc"].get(cur_p, np.nan)
+
+m1, m2, m3, m4 = st.columns(4)
+with m1:
+    val_color = "metric-pos" if (not pd.isna(avg_max_cur) and avg_max_cur >= 0) else "metric-neg"
+    val_str   = f"{avg_max_cur:+.2f}%" if not pd.isna(avg_max_cur) else "—"
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">Avg Return — Current {('Week' if timeframe=='Weekly' else 'Month')}</div>
+        <div class="metric-value {val_color}">{val_str}</div>
+    </div>""", unsafe_allow_html=True)
+with m2:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">Win Rate — Current {('Week' if timeframe=='Weekly' else 'Month')}</div>
+        <div class="metric-value">{_wr_badge(wr_max_cur)}</div>
+    </div>""", unsafe_allow_html=True)
+with m3:
+    val_color = "metric-pos" if (not pd.isna(actual_cur) and actual_cur >= 0) else "metric-neg"
+    val_str   = f"{actual_cur:+.2f}%" if not pd.isna(actual_cur) else "N/A yet"
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">{CURRENT_YEAR} Actual — Current {('Week' if timeframe=='Weekly' else 'Month')}</div>
+        <div class="metric-value {val_color}">{val_str}</div>
+    </div>""", unsafe_allow_html=True)
+with m4:
+    n_years = len(data["completed_years"])
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">Completed Years in Dataset</div>
+        <div class="metric-value" style="color:#00E5FF">{n_years}</div>
+    </div>""", unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────
+# CHART TABS
+# ─────────────────────────────────────────────
+tab1, tab2 = st.tabs(["📊  Average Returns (Bars)", "〰️  Cumulative Trend (Lines)"])
+
+with tab1:
+    for wk, label in [("5", "Last 5 Years"), ("10", "Last 10 Years"), ("max", f"Max (Since {start_year})")]:
+        fig = make_bar_chart(
+            data=data,
+            window_key=wk,
+            show_winrate=show_winrate,
+            timeframe=timeframe,
+            title=label,
+        )
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+with tab2:
+    for wk, label in [("5", "Last 5 Years — Cumulative"), ("10", "Last 10 Years — Cumulative"), ("max", f"Max (Since {start_year}) — Cumulative")]:
+        fig = make_cumulative_chart(
+            data=data,
+            window_key=wk,
+            show_spaghetti=show_spaghetti,
+            timeframe=timeframe,
+            title=label,
+        )
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+# ─────────────────────────────────────────────
+# DOWNLOAD
+# ─────────────────────────────────────────────
+st.markdown('<div class="section-header">Export</div>', unsafe_allow_html=True)
+csv_bytes = build_csv(data, timeframe)
+label_tf = "weekly" if timeframe == "Weekly" else "monthly"
+st.download_button(
+    label=f"⬇️  Download {ticker} {timeframe} Seasonality Data (.csv)",
+    data=csv_bytes,
+    file_name=f"{ticker}_{label_tf}_seasonality_{start_year}-{CURRENT_YEAR}.csv",
+    mime="text/csv",
+)
