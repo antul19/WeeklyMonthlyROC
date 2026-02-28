@@ -188,8 +188,11 @@ COLORS = {
     "cycle_pre":  "#39FF14",  
     "cycle_elec": "#00E5FF",  
     
-    # Macro Events Shading
-    "macro_zone": "rgba(255, 68, 68, 0.15)"
+    # Global Macro Colors
+    "us":         "#00E5FF",  # Neon Blue
+    "canada":     "#FF3333",  # Crimson Red
+    "india":      "#FFB300",  # Gold
+    "macro_zone": "rgba(255, 68, 68, 0.12)"
 }
 
 MACRO_EVENTS = [
@@ -258,25 +261,28 @@ def fetch_presidential_cycle_data() -> pd.DataFrame | None:
         return None
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def fetch_century_macro_data() -> pd.DataFrame | None:
-    try:
-        # FIX: Ask for '1d' (daily) data to bypass Yahoo's monthly lookback limits
-        df = yf.download("^GSPC", start="1927-12-01", interval="1d", auto_adjust=False, progress=False)
-        if df.empty: return None
-        
-        close = df["Close"]
-        if isinstance(close, pd.DataFrame): close = close.squeeze()
-        close = close.dropna()
-        
-        # FIX: Manually crush the daily data into monthly data
-        close = close.resample("ME").last().dropna()
-        
-        # We are returning the RAW index price to safely plot on a log scale
-        price_df = close.to_frame(name="price")
-        price_df.index = pd.to_datetime(price_df.index)
-        return price_df
-    except Exception:
-        return None
+def fetch_global_macro_data() -> dict:
+    tickers = {
+        "US (^GSPC)": "^GSPC",
+        "Canada (^GSPTSE)": "^GSPTSE",
+        "India (^NSEI)": "^NSEI"
+    }
+    data_dict = {}
+    
+    # We ask for '1d' data starting 1927 to bypass Yahoo's monthly limits, 
+    # then compress into monthly ('ME') ourselves.
+    for name, ticker in tickers.items():
+        try:
+            df = yf.download(ticker, start="1927-12-01", interval="1d", auto_adjust=False, progress=False)
+            if not df.empty:
+                close = df["Close"]
+                if isinstance(close, pd.DataFrame): close = close.squeeze()
+                # Resample daily data to monthly end-of-month last prices
+                close = close.dropna().resample("ME").last().dropna()
+                data_dict[name] = close
+        except Exception:
+            pass
+    return data_dict
 
 def compute_seasonality(roc_df: pd.DataFrame, timeframe: str, start_year: int) -> dict:
     periods = list(range(1, 53)) if timeframe == "Weekly" else list(range(1, 13))
@@ -531,17 +537,8 @@ def make_presidential_cycle_chart(cycle_data: dict) -> go.Figure:
     fig.update_layout(**layout)
     return fig
 
-def make_macro_chart(df: pd.DataFrame, scale: str) -> go.Figure:
-    fig = go.Figure()
-
-    # Plot the raw index price
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df["price"],
-        mode="lines", line=dict(color="#00E5FF", width=2),
-        name="S&P 500", hovertemplate="Date: %{x|%b %Y}<br>Index Value: %{y:,.0f}<extra></extra>"
-    ))
-
-    # Add shaded zones for Macro Events
+# Helper to plot Macro Zones
+def _add_macro_zones(fig):
     for ev in MACRO_EVENTS:
         fig.add_vrect(
             x0=ev["start"], x1=ev["end"],
@@ -551,15 +548,60 @@ def make_macro_chart(df: pd.DataFrame, scale: str) -> go.Figure:
             annotation_textangle=-90
         )
 
-    title_str = f"S&P 500 Market Resilience Since 1927 — {scale.capitalize()} Scale"
-    layout = _base_layout(title_str, height=500)
-    layout["margin"]["t"] = 60
+def make_rebased_macro_chart(data_dict: dict) -> go.Figure:
+    fig = go.Figure()
     
-    if scale == "log":
-        layout["yaxis"]["type"] = "log"
-        layout["yaxis"]["title"] = "Index Value (Log Scale)"
-    else:
-        layout["yaxis"]["title"] = "Index Value (Linear Scale)"
+    # Merge all series into a single dataframe to find the common start date
+    df_combined = pd.DataFrame(data_dict).dropna()
+    
+    if df_combined.empty:
+        return fig
+        
+    # Rebase all to 100 at the start of the overlapping timeframe
+    df_rebased = df_combined / df_combined.iloc[0] * 100
+    
+    line_colors = {"US (^GSPC)": COLORS["us"], "Canada (^GSPTSE)": COLORS["canada"], "India (^NSEI)": COLORS["india"]}
+    
+    for col in df_rebased.columns:
+        fig.add_trace(go.Scatter(
+            x=df_rebased.index, y=df_rebased[col],
+            mode="lines", line=dict(color=line_colors.get(col, "#FFFFFF"), width=2),
+            name=col, hovertemplate="Date: %{x|%b %Y}<br>Rebased Value: %{y:,.1f}<extra></extra>"
+        ))
+
+    _add_macro_zones(fig)
+
+    start_yr = df_rebased.index[0].year
+    title_str = f"Global Market Resilience (Rebased to 100 in {start_yr}) — Log Scale"
+    layout = _base_layout(title_str, height=550)
+    layout["margin"]["t"] = 60
+    layout["yaxis"]["type"] = "log"
+    layout["yaxis"]["title"] = "Index Value (Log Scale, Base 100)"
+
+    fig.update_layout(**layout)
+    return fig
+
+def make_isolated_macro_chart(series: pd.Series, name: str) -> go.Figure:
+    fig = go.Figure()
+
+    line_color = COLORS["us"]
+    if "Canada" in name: line_color = COLORS["canada"]
+    elif "India" in name: line_color = COLORS["india"]
+
+    fig.add_trace(go.Scatter(
+        x=series.index, y=series.values,
+        mode="lines", line=dict(color=line_color, width=2),
+        name=name, hovertemplate="Date: %{x|%b %Y}<br>Index Value: %{y:,.0f}<extra></extra>"
+    ))
+
+    _add_macro_zones(fig)
+
+    start_yr = series.index[0].year
+    title_str = f"{name} Market Resilience (Since {start_yr}) — Log Scale"
+    layout = _base_layout(title_str, height=450)
+    layout["margin"]["t"] = 60
+    layout["yaxis"]["type"] = "log"
+    layout["yaxis"]["title"] = "Raw Index Value (Log Scale)"
 
     fig.update_layout(**layout)
     return fig
@@ -654,19 +696,23 @@ with tab3:
 with tab4:
     st.markdown("""
     <div style="background-color: #12151c; border: 1px solid #1e2330; border-left: 3px solid #FF4444; border-radius: 6px; padding: 1rem; margin-bottom: 1rem; font-size: 0.85rem; color: #8d9ab0;">
-    <strong>Historical Context (^GSPC):</strong> Because the SPY ETF was only established in 1993, this chart strictly maps the underlying <strong>S&P 500 Index (^GSPC)</strong> starting from 1927. This allows us to capture nearly a century of major macro shocks. 
-    <br><br>
-    <em>Mathematical Note: The charts below plot the raw Index Value rather than percentage return, which is required to correctly compute the Logarithmic scale.</em>
+    <strong>Global Macro Context:</strong> Tracking market resilience across developed and emerging economies. All charts are rendered on a <strong>Logarithmic Scale</strong> to accurately visualize compound growth.
     </div>
     """, unsafe_allow_html=True)
     
-    with st.spinner("Loading Century Macro Data..."):
-        macro_df = fetch_century_macro_data()
-        if macro_df is not None and not macro_df.empty:
-            st.plotly_chart(make_macro_chart(macro_df, scale="log"), use_container_width=True, config={"displayModeBar": False})
-            st.plotly_chart(make_macro_chart(macro_df, scale="linear"), use_container_width=True, config={"displayModeBar": False})
+    view_type = st.radio("Select View:", ["Option A: Normalized Race (Rebased to 100)", "Option B: Isolated Maximum History"], horizontal=True)
+    
+    with st.spinner("Loading Global Macro Data..."):
+        global_data = fetch_global_macro_data()
+        
+        if global_data:
+            if "Option A" in view_type:
+                st.plotly_chart(make_rebased_macro_chart(global_data), use_container_width=True, config={"displayModeBar": False})
+            else:
+                for name, series in global_data.items():
+                    st.plotly_chart(make_isolated_macro_chart(series, name), use_container_width=True, config={"displayModeBar": False})
         else:
-            st.error("Failed to load S&P 500 century macro data.")
+            st.error("Failed to load global macro data.")
 
 st.markdown('<div class="section-header">Export</div>', unsafe_allow_html=True)
 st.download_button(label=f"⬇️  Download {ticker} {timeframe} Seasonality Data (.csv)", data=build_csv(data, timeframe), file_name=f"{ticker}_{'weekly' if timeframe == 'Weekly' else 'monthly'}_seasonality_{start_year}-{CURRENT_YEAR}.csv", mime="text/csv")
