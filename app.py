@@ -74,8 +74,22 @@ with tab4:
 
 with tab5:
     st.markdown("""
-    <div style="background-color: #12151c; border: 1px solid #1e2330; border-left: 3px solid #39FF14; border-radius: 6px; padding: 1rem; margin-bottom: 1rem; font-size: 0.85rem; color: #8d9ab0;">
-    <strong>Relative Sector Rotation:</strong> Maps the 11 major S&P 500 sectors against the benchmark (SPY). Follow the "tails" to see how capital is currently rotating through the 4 quadrants.
+    <div style="background-color: #12151c; border: 1px solid #1e2330; border-left: 3px solid #39FF14; border-radius: 6px; padding: 1rem; margin-bottom: 1rem; font-size: 0.85rem; color: #8d9ab0; line-height: 1.6;">
+    <strong>Relative Sector Rotation Graph (RRG):</strong> Maps the 11 major S&P 500 Select Sector SPDRs against the benchmark (SPY). Follow the "tails" to see how capital is currently rotating through the 4 quadrants (Leading, Weakening, Lagging, Improving).<br><br>
+    <strong>Sector Ticker Legend:</strong>
+    <div style="display: flex; flex-wrap: wrap; margin-top: 0.3rem; font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem;">
+        <div style="width: 33%;"><strong>XLK:</strong> Technology</div>
+        <div style="width: 33%;"><strong>XLF:</strong> Financials</div>
+        <div style="width: 33%;"><strong>XLV:</strong> Health Care</div>
+        <div style="width: 33%;"><strong>XLE:</strong> Energy</div>
+        <div style="width: 33%;"><strong>XLY:</strong> Cons. Discretionary</div>
+        <div style="width: 33%;"><strong>XLP:</strong> Cons. Staples</div>
+        <div style="width: 33%;"><strong>XLI:</strong> Industrials</div>
+        <div style="width: 33%;"><strong>XLU:</strong> Utilities</div>
+        <div style="width: 33%;"><strong>XLB:</strong> Materials</div>
+        <div style="width: 33%;"><strong>XLRE:</strong> Real Estate</div>
+        <div style="width: 33%;"><strong>XLC:</strong> Communications</div>
+    </div>
     </div>
     """, unsafe_allow_html=True)
     
