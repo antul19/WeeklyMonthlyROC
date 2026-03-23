@@ -117,3 +117,41 @@ def compute_cycle_seasonality(roc_df: pd.DataFrame) -> dict:
         "cur_roc": cur_data.set_index("cycle_month")["roc"] if not cur_data.empty else pd.Series(dtype=float),
         "current_cycle_start": start
     }
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_sector_data() -> pd.DataFrame | None:
+    from config import SECTORS
+    tickers = list(SECTORS.values()) + ["SPY"]
+    try:
+        # Fetch 1 year of daily data to compute accurate moving averages
+        df = yf.download(tickers, period="1y", interval="1d", auto_adjust=False, progress=False)
+        if df.empty: return None
+        if isinstance(df.columns, pd.MultiIndex):
+            return df["Close"].dropna()
+        return None 
+    except Exception as e:
+        print(f"Sector Fetch Error: {e}")
+        return None
+
+def compute_rrg(df: pd.DataFrame) -> dict | None:
+    if df is None or "SPY" not in df.columns: return None
+    
+    # 1. Calculate Relative Strength (RS) vs SPY
+    rs_df = df.div(df["SPY"], axis=0).drop(columns=["SPY"])
+    
+    # 2. RS-Ratio (X-Axis): Smoothed 14-week (70 trading days) trend, normalized to 100
+    rs_ratio = (rs_df / rs_df.rolling(window=70).mean()) * 100
+    
+    # 3. RS-Momentum (Y-Axis): Smoothed 2-week (10 trading days) speed of the ratio, normalized to 100
+    rs_momentum = (rs_ratio / rs_ratio.rolling(window=10).mean()) * 100
+    
+    rs_ratio, rs_momentum = rs_ratio.dropna(), rs_momentum.dropna()
+    if rs_ratio.empty or rs_momentum.empty: return None
+    
+    # Return the last 15 days to plot the visual "tail" of the rotation
+    tail_length = 15
+    return {
+        "ratio": rs_ratio.tail(tail_length),
+        "momentum": rs_momentum.tail(tail_length),
+        "current_date": rs_ratio.index[-1].strftime("%b %d, %Y")
+    }
