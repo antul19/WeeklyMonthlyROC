@@ -104,3 +104,40 @@ def make_rebased_macro_chart(data_dict: dict, events_list: list, zone_color: str
     layout["yaxis"].update(type="log", title="Index/Asset Value (Log)")
     fig.update_layout(**layout)
     return fig
+
+def make_rrg_chart(rrg_data: dict) -> go.Figure:
+    from config import SECTOR_COLORS
+    fig = go.Figure()
+    ratio, momentum = rrg_data["ratio"], rrg_data["momentum"]
+    
+    # Draw Quadrant Crosshairs at the 100/100 baseline
+    fig.add_hline(y=100, line_dash="solid", line_color="#2a3045", line_width=2)
+    fig.add_vline(x=100, line_dash="solid", line_color="#2a3045", line_width=2)
+    
+    # Calculate chart boundaries to keep the 100/100 crosshair perfectly centered
+    max_dev = max(abs(ratio.min().min()-100), abs(ratio.max().max()-100), 
+                  abs(momentum.min().min()-100), abs(momentum.max().max()-100)) * 1.15
+    b_min, b_max = 100 - max_dev, 100 + max_dev
+
+    # Background Labels
+    lbl_font = dict(family="IBM Plex Mono", color="#3a4258", size=24)
+    fig.add_annotation(x=b_max-0.5, y=b_max-0.5, text="LEADING", showarrow=False, font=lbl_font, xanchor="right", yanchor="top")
+    fig.add_annotation(x=b_max-0.5, y=b_min+0.5, text="WEAKENING", showarrow=False, font=lbl_font, xanchor="right", yanchor="bottom")
+    fig.add_annotation(x=b_min+0.5, y=b_min+0.5, text="LAGGING", showarrow=False, font=lbl_font, xanchor="left", yanchor="bottom")
+    fig.add_annotation(x=b_min+0.5, y=b_max-0.5, text="IMPROVING", showarrow=False, font=lbl_font, xanchor="left", yanchor="top")
+
+    for col in ratio.columns:
+        color = SECTOR_COLORS.get(col, "#FFFFFF")
+        # Plot the tail ending in a large dot for the current day
+        fig.add_trace(go.Scatter(
+            x=ratio[col], y=momentum[col], mode="lines+markers",
+            line=dict(color=color, width=2),
+            marker=dict(size=[4]*(len(ratio)-1) + [14], color=color, line=dict(color="#000", width=1)),
+            name=col, hovertemplate=f"<b>{col}</b><br>Strength (X): %{{x:.2f}}<br>Momentum (Y): %{{y:.2f}}<extra></extra>"
+        ))
+
+    layout = _base_layout(f"Sector Rotation Graph (vs SPY) • {rrg_data['current_date']}", height=700)
+    layout["xaxis"].update(title="Relative Strength (RS-Ratio) ➔", range=[b_min, b_max], zeroline=False)
+    layout["yaxis"].update(title="Relative Momentum (RS-Momentum) ➔", range=[b_min, b_max], zeroline=False)
+    fig.update_layout(**layout)
+    return fig
