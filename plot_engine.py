@@ -137,6 +137,10 @@ def make_rrg_chart(rrg_data: dict) -> go.Figure:
         ))
 
     layout = _base_layout(f"Sector Rotation Graph (vs SPY) • {rrg_data['current_date']}", height=700)
+    # --- ADD THESE TWO LINES TO FIX THE SPACING ---
+    layout["margin"]["t"] = 100    # Pushes the entire chart down to give the title room
+    layout["legend"]["y"] = 1.05   # Nudges the horizontal legend safely below the title
+    # ----------------------------------------------
     layout["xaxis"].update(title="Relative Strength (RS-Ratio) ➔", range=[b_min, b_max], zeroline=False)
     layout["yaxis"].update(title="Relative Momentum (RS-Momentum) ➔", range=[b_min, b_max], zeroline=False)
     fig.update_layout(**layout)
