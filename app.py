@@ -89,5 +89,6 @@ with tab5:
                 st.error("Failed to compute sector rotation math.")
         else:
             st.error("Failed to fetch underlying sector ETF data.")
+            
 
 st.download_button("⬇️ Download CSV", build_csv(data, timeframe), f"{ticker}_seasonality.csv", "text/csv")
