@@ -76,3 +76,17 @@ def load_css():
     .stDownloadButton button { background: #1a2540 !important; border: 1px solid #2a4070 !important; color: #4a9eff !important; font-family: 'IBM Plex Mono', monospace !important; font-size: 0.8rem !important; }
     </style>
     """
+
+SECTORS = {
+    "Tech (XLK)": "XLK", "Financials (XLF)": "XLF", "Healthcare (XLV)": "XLV",
+    "Energy (XLE)": "XLE", "Consumer Discretionary (XLY)": "XLY",
+    "Consumer Staples (XLP)": "XLP", "Industrials (XLI)": "XLI",
+    "Utilities (XLU)": "XLU", "Materials (XLB)": "XLB",
+    "Real Estate (XLRE)": "XLRE", "Communication (XLC)": "XLC"
+}
+
+SECTOR_COLORS = {
+    "XLK": "#00E5FF", "XLF": "#39FF14", "XLV": "#FF3333", "XLE": "#FFA500",
+    "XLY": "#FF00FF", "XLP": "#FFFF00", "XLI": "#8A2BE2", "XLU": "#00BFFF",
+    "XLB": "#A52A2A", "XLRE": "#FFC0CB", "XLC": "#FFFFFF"
+}
