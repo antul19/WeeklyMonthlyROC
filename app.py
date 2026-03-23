@@ -5,6 +5,8 @@ import io
 from config import CURRENT_YEAR, FINANCIAL_CRISES, GEOPOLITICAL_WARS, COLORS, load_css
 from data_engine import fetch_seasonality_data_v5, fetch_presidential_cycle_data, fetch_global_macro_data, compute_seasonality, compute_cycle_seasonality
 from plot_engine import make_bar_chart, make_cumulative_chart, make_presidential_cycle_chart, make_rebased_macro_chart
+from data_engine import fetch_seasonality_data_v5, fetch_presidential_cycle_data, fetch_global_macro_data, compute_seasonality, compute_cycle_seasonality, fetch_sector_data, compute_rrg
+from plot_engine import make_bar_chart, make_cumulative_chart, make_presidential_cycle_chart, make_rebased_macro_chart, make_rrg_chart
 
 st.set_page_config(page_title="ETF Seasonality Dashboard", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
 st.markdown(load_css(), unsafe_allow_html=True)
@@ -48,7 +50,7 @@ m3.markdown(f'<div class="metric-card"><div class="metric-label">{CURRENT_YEAR} 
 m4.markdown(f'<div class="metric-card"><div class="metric-label">Dataset Years</div><div class="metric-value">{len(data["completed_years"])}</div></div>', unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
-tab1, tab2, tab3, tab4 = st.tabs(["📊 Average Returns", "〰️ Cumulative Trend", "🇺🇸 Presidential Cycle", "🌍 Macro Events"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Average Returns", "〰️ Cumulative Trend", "🇺🇸 Presidential Cycle", "🌍 Macro Events", "🔄 Sector Rotation"])
 
 with tab1:
     for wk, lbl in [("5", "Last 5 Years"), ("10", "Last 10 Years"), ("max", "Max")]: st.plotly_chart(make_bar_chart(data, wk, show_winrate, timeframe, lbl), use_container_width=True)
@@ -69,5 +71,23 @@ with tab4:
             filtered_data = {k: global_data[k] for k in selected_assets}
             st.plotly_chart(make_rebased_macro_chart(filtered_data, FINANCIAL_CRISES, COLORS["crisis_zone"], "Financial Crises"), use_container_width=True)
             st.plotly_chart(make_rebased_macro_chart(filtered_data, GEOPOLITICAL_WARS, COLORS["war_zone"], "Geopolitical Conflicts"), use_container_width=True)
+
+with tab5:
+    st.markdown("""
+    <div style="background-color: #12151c; border: 1px solid #1e2330; border-left: 3px solid #39FF14; border-radius: 6px; padding: 1rem; margin-bottom: 1rem; font-size: 0.85rem; color: #8d9ab0;">
+    <strong>Relative Sector Rotation:</strong> Maps the 11 major S&P 500 sectors against the benchmark (SPY). Follow the "tails" to see how capital is currently rotating through the 4 quadrants.
+    </div>
+    """, unsafe_allow_html=True)
+    
+    with st.spinner("Calculating Sector Rotation matrix..."):
+        sector_df = fetch_sector_data()
+        if sector_df is not None:
+            rrg_data = compute_rrg(sector_df)
+            if rrg_data:
+                st.plotly_chart(make_rrg_chart(rrg_data), use_container_width=True, config={"displayModeBar": False})
+            else:
+                st.error("Failed to compute sector rotation math.")
+        else:
+            st.error("Failed to fetch underlying sector ETF data.")
 
 st.download_button("⬇️ Download CSV", build_csv(data, timeframe), f"{ticker}_seasonality.csv", "text/csv")
