@@ -3,9 +3,7 @@ import pandas as pd
 import numpy as np
 import io
 from config import CURRENT_YEAR, FINANCIAL_CRISES, GEOPOLITICAL_WARS, COLORS, load_css
-from data_engine import fetch_seasonality_data_v5, fetch_presidential_cycle_data, fetch_global_macro_data, compute_seasonality, compute_cycle_seasonality
-from plot_engine import make_bar_chart, make_cumulative_chart, make_presidential_cycle_chart, make_rebased_macro_chart
-from data_engine import fetch_seasonality_data_v5, fetch_presidential_cycle_data, fetch_global_macro_data, compute_seasonality, compute_cycle_seasonality, fetch_sector_data, compute_rrg
+from data_engine import fetch_seasonality_data_v5, fetch_presidential_cycle_data, fetch_global_macro_data, compute_seasonality, compute_cycle_seasonality, fetch_sector_data, compute_rrg, build_rrg_table
 from plot_engine import make_bar_chart, make_cumulative_chart, make_presidential_cycle_chart, make_rebased_macro_chart, make_rrg_chart
 
 st.set_page_config(page_title="ETF Seasonality Dashboard", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
