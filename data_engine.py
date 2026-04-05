@@ -155,3 +155,42 @@ def compute_rrg(df: pd.DataFrame) -> dict | None:
         "momentum": rs_momentum.tail(tail_length),
         "current_date": rs_ratio.index[-1].strftime("%b %d, %Y")
     }
+# --- ADD TO data_engine.py ---
+
+def build_rrg_table(rrg_data: dict) -> pd.DataFrame:
+    """Compiles the Relative Rotation Graph data into a clean summary table."""
+    ratio = rrg_data["ratio"]
+    momentum = rrg_data["momentum"]
+    
+    table_data = []
+    
+    # Iterate through each sector to grab the latest values
+    for col in ratio.columns:
+        current_rs = ratio[col].iloc[-1]
+        current_mom = momentum[col].iloc[-1]
+        
+        # Determine the Quadrant mathematically
+        if current_rs >= 100 and current_mom >= 100:
+            quadrant = "LEADING"
+        elif current_rs >= 100 and current_mom < 100:
+            quadrant = "WEAKENING"
+        elif current_rs < 100 and current_mom < 100:
+            quadrant = "LAGGING"
+        else:
+            quadrant = "IMPROVING"
+            
+        table_data.append({
+            "Sector": col,
+            "Quadrant": quadrant,
+            "RS-Ratio (Strength)": round(current_rs, 2),
+            "RS-Momentum (Speed)": round(current_mom, 2)
+        })
+        
+    df = pd.DataFrame(table_data)
+    
+    # Sort by Quadrant (Leading first) and then by Strength
+    quadrant_order = {"LEADING": 1, "IMPROVING": 2, "WEAKENING": 3, "LAGGING": 4}
+    df['Order'] = df['Quadrant'].map(quadrant_order)
+    df = df.sort_values(by=['Order', 'RS-Ratio (Strength)'], ascending=[True, False]).drop(columns=['Order']).reset_index(drop=True)
+    
+    return df
