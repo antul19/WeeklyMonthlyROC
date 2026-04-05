@@ -16,7 +16,7 @@ def build_csv(data: dict, timeframe: str) -> bytes:
     buf = io.BytesIO()
     pd.DataFrame(rows).to_csv(buf, index=False)
     return buf.getvalue()
-
+    
 with st.sidebar:
     st.markdown('<div class="section-header">Configuration</div>', unsafe_allow_html=True)
     ticker = st.text_input("Ticker Symbol", value="QQQ").upper().strip()
@@ -96,11 +96,27 @@ with tab5:
         if sector_df is not None:
             rrg_data = compute_rrg(sector_df)
             if rrg_data:
+                # 1. Render the Interactive Chart
                 st.plotly_chart(make_rrg_chart(rrg_data), use_container_width=True, config={"displayModeBar": False})
+                
+                # 2. Render the Data Table
+                st.markdown('<div class="section-header">Current Quadrant Summary</div>', unsafe_allow_html=True)
+                summary_df = build_rrg_table(rrg_data)
+                st.dataframe(summary_df, use_container_width=True, hide_index=True)
+                
             else:
                 st.error("Failed to compute sector rotation math.")
         else:
             st.error("Failed to fetch underlying sector ETF data.")
-            
 
-st.download_button("⬇️ Download CSV", build_csv(data, timeframe), f"{ticker}_seasonality.csv", "text/csv")
+
+# ─────────────────────────────────────────────
+# EXPORT SECTION (At the very bottom, outside the tabs)
+# ─────────────────────────────────────────────
+st.markdown('<div class="section-header">Export</div>', unsafe_allow_html=True)
+st.download_button(
+    label="⬇️ Download CSV", 
+    data=build_csv(data, timeframe), 
+    file_name=f"{ticker}_seasonality.csv", 
+    mime="text/csv"
+)
