@@ -83,8 +83,15 @@ def make_presidential_cycle_chart(cycle_data: dict) -> go.Figure:
     for m, label in [(12, "Yr 1"), (24, "Yr 2"), (36, "Yr 3")]: fig.add_vline(x=m, line_dash="dot", line_color="#4a5568")
 
     layout = _base_layout("S&P 500: 48-Month Presidential Cycle (Since 1981)", height=550)
+    
+    # --- ADD THESE TWO LINES TO ADJUST SPACING ---
+    layout["margin"]["t"] = 100    # Increases the top margin (pushes the chart down)
+    layout["legend"]["y"] = 1.05   # Adjusts the vertical position of the legend
+    # ---------------------------------------------
+    
     layout["xaxis"].update(title="Months Since Cycle Start", dtick=4, range=[-0.5, 48.5])
     layout["yaxis"]["ticksuffix"] = "%"
+    
     fig.update_layout(**layout)
     return fig
 
