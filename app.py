@@ -19,14 +19,17 @@ from data_engine import (
     compute_cycle_seasonality, 
     fetch_sector_data, 
     compute_rrg, 
-    build_rrg_table
+    build_rrg_table,
+    fetch_volatility_surface,
+    compute_vol_surface_grid
 )
 from plot_engine import (
     make_bar_chart, 
     make_cumulative_chart, 
     make_presidential_cycle_chart, 
     make_rebased_macro_chart, 
-    make_rrg_chart
+    make_rrg_chart,
+    make_volatility_surface_chart
 )
 
 # ─────────────────────────────────────────────
@@ -110,12 +113,13 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ─────────────────────────────────────────────
 # TABS
 # ─────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 Average Returns", 
     "〰️ Cumulative Trend", 
     "🇺🇸 Presidential Cycle", 
     "🌍 Macro Events", 
-    "🔄 Sector Rotation"
+    "🔄 Sector Rotation",
+    "🌊 Volatility Surface"
 ])
 
 with tab1:
@@ -208,6 +212,24 @@ with tab5:
                 st.error("Failed to compute sector rotation math.")
         else:
             st.error("Failed to fetch underlying sector ETF data.")
+with tab6:
+    st.markdown("""
+    <div style="background-color: #12151c; border: 1px solid #1e2330; border-left: 3px solid #00E5FF; border-radius: 6px; padding: 1rem; margin-bottom: 1rem; font-size: 0.85rem; color: #8d9ab0; line-height: 1.6;">
+    <strong>Live Implied Volatility (IV) Surface:</strong> Maps the current options chain for the selected asset. 
+    Look for "spikes" or "dents" in the surface to identify mispriced risk. High-elevation areas (Red/Yellow) indicate elevated premiums, ideal for net-credit strategies. Low-elevation valleys (Blue) indicate cheap volatility, ideal for net-debit hedges.
+    </div>
+    """, unsafe_allow_html=True)
+    
+    with st.spinner(f"Fetching live options chain for {ticker}..."):
+        raw_options = fetch_volatility_surface(ticker)
+        if raw_options is not None:
+            vol_grid = compute_vol_surface_grid(raw_options)
+            if vol_grid is not None:
+                st.plotly_chart(make_volatility_surface_chart(vol_grid, ticker), use_container_width=True, config={"displayModeBar": False})
+            else:
+                st.error("Failed to construct the 3D surface matrix. Options data may be too sparse.")
+        else:
+            st.error(f"No active options data found for {ticker}. Ensure you are searching an asset with liquid options chains (e.g., SPY, QQQ, TSLA).")
 # ─────────────────────────────────────────────
 # GLOBAL EXPORT SECTION
 # ─────────────────────────────────────────────
