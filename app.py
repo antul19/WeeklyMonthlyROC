@@ -165,18 +165,49 @@ with tab5:
         if sector_df is not None:
             rrg_data = compute_rrg(sector_df)
             if rrg_data:
-                # Plotly Chart
-                st.plotly_chart(make_rrg_chart(rrg_data), use_container_width=True, config={"displayModeBar": False})
                 
-                # Data Table
+                # --- NEW: Interactive Filtering & Tail Control ---
+                st.markdown('<div class="section-header">RRG Controls</div>', unsafe_allow_html=True)
+                
+                # Use Streamlit columns to put the Filter and Slider side-by-side
+                ctrl_col1, ctrl_col2 = st.columns([2, 1])
+                
+                with ctrl_col1:
+                    available_sectors = list(rrg_data['ratio'].columns)
+                    selected_sectors = st.multiselect(
+                        "Filter Sectors:",
+                        options=available_sectors,
+                        default=available_sectors
+                    )
+                
+                with ctrl_col2:
+                    # Slider to control how many weeks the "tail" reaches back
+                    # Default is 15. Max is length of the available smoothed data (usually ~40-50 weeks)
+                    max_tail = min(50, len(rrg_data['ratio']))
+                    tail_length = st.slider("Tail Length (Trading Days):", min_value=1, max_value=max_tail, value=15)
+                
+                # Filter the data based on UI inputs
+                filtered_rrg_data = {
+                    # .tail() limits the lookback window based on the slider
+                    "ratio": rrg_data['ratio'][selected_sectors].tail(tail_length),
+                    "momentum": rrg_data['momentum'][selected_sectors].tail(tail_length),
+                    "current_date": rrg_data['current_date']
+                }
+
+                # Render Interactive Plotly Chart
+                st.plotly_chart(make_rrg_chart(filtered_rrg_data), use_container_width=True, config={"displayModeBar": False})
+                
+                # Render Data Table
                 st.markdown('<div class="section-header">Current Quadrant Summary</div>', unsafe_allow_html=True)
-                summary_df = build_rrg_table(rrg_data)
+                # Note: The table always uses the current day (row -1), so tail length doesn't affect it,
+                # but we still pass the filtered data so it only shows selected sectors.
+                summary_df = build_rrg_table(filtered_rrg_data)
                 st.dataframe(summary_df, use_container_width=True, hide_index=True)
+                
             else:
                 st.error("Failed to compute sector rotation math.")
         else:
             st.error("Failed to fetch underlying sector ETF data.")
-
 # ─────────────────────────────────────────────
 # GLOBAL EXPORT SECTION
 # ─────────────────────────────────────────────
