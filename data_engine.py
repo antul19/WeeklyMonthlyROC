@@ -196,71 +196,62 @@ def build_rrg_table(rrg_data: dict) -> pd.DataFrame:
     return df
 # --- ADD THIS TO THE BOTTOM OF data_engine.py ---
 
-@st.cache_data(ttl=900, show_spinner=False) # Cached for 15 minutes
+@st.cache_data(ttl=900, show_spinner=False)
 def fetch_volatility_surface(ticker_symbol: str) -> pd.DataFrame | None:
-    """Fetches live option chains and calculates Moneyness and DTE."""
+    """Fetches live option chains with relaxed filtering and error handling."""
     try:
         tk = yf.Ticker(ticker_symbol)
         expirations = tk.options
+        
+        # 1. Check if YF is providing dates at all
         if not expirations:
+            print(f"DEBUG: Yahoo Finance returned no expiration dates for {ticker_symbol}.")
             return None
             
         hist = tk.history(period="1d")
         if hist.empty:
+            print(f"DEBUG: Could not fetch current price for {ticker_symbol}.")
             return None
+            
         current_price = hist['Close'].iloc[-1]
-        
         data = []
-        # Pull the first 8 expiration cycles to build the near-term term structure
-        for exp in expirations[:8]:
-            opt = tk.option_chain(exp)
-            
-            # Combine Calls and Puts
-            df = pd.concat([opt.calls, opt.puts])
-            df['Expiration'] = pd.to_datetime(exp)
-            
-            # Calculate Days to Expiration (DTE)
-            today = pd.Timestamp.now().normalize()
-            # Ensure timezones match before subtracting
-            if df['Expiration'].dt.tz is not None:
-                df['Expiration'] = df['Expiration'].dt.tz_localize(None)
-            df['DTE'] = (df['Expiration'] - today).dt.days
-            
-            # Clean up bad data points (0 IV or 0 Open Interest)
-            df = df[(df['impliedVolatility'] > 0.01) & (df['openInterest'] > 0)]
-            data.append(df)
-            
-        if not data: return None
-        full_chain = pd.concat(data)
         
-        # Moneyness = Strike / Current Spot Price 
-        # (1.0 = At The Money. < 1.0 = OTM Puts. > 1.0 = OTM Calls)
+        # 2. Limit to 5 expirations to prevent severe API throttling
+        for exp in expirations[:5]:
+            try:
+                opt = tk.option_chain(exp)
+                df = pd.concat([opt.calls, opt.puts])
+                df['Expiration'] = pd.to_datetime(exp)
+                
+                today = pd.Timestamp.now().normalize()
+                if df['Expiration'].dt.tz is not None:
+                    df['Expiration'] = df['Expiration'].dt.tz_localize(None)
+                df['DTE'] = (df['Expiration'] - today).dt.days
+                
+                # RELAXED FILTER: We removed the strict IV > 0 filter here
+                df = df[df['openInterest'] > 0] 
+                data.append(df)
+            except Exception as e:
+                print(f"DEBUG: Failed to fetch chain for {exp}: {e}")
+                continue
+                
+        if not data: 
+            print("DEBUG: All option chains were empty after fetching.")
+            return None
+            
+        full_chain = pd.concat(data)
         full_chain['Moneyness'] = full_chain['strike'] / current_price
         
-        # Filter strictly to the "Smile" region (±20% from the current price)
-        clean_chain = full_chain[(full_chain['Moneyness'] >= 0.80) & (full_chain['Moneyness'] <= 1.20)]
+        # 3. Widen the "Smile" region to catch more data points (±30%)
+        clean_chain = full_chain[(full_chain['Moneyness'] >= 0.70) & (full_chain['Moneyness'] <= 1.30)]
+        
+        # 4. Fallback check: Did YF zero out all the IVs because the market is closed?
+        if clean_chain['impliedVolatility'].max() <= 0.01:
+            print(f"DEBUG: YF is reporting 0% Implied Volatility across the board for {ticker_symbol}.")
+            return None
+             
         return clean_chain
 
     except Exception as e:
         print(f"Vol Surface Data Error: {e}")
         return None
-
-def compute_vol_surface_grid(df: pd.DataFrame) -> pd.DataFrame | None:
-    """Pivots the options data into a 3D matrix (X, Y) = Z"""
-    if df is None or df.empty: return None
-    
-    # Round moneyness to create uniform X-axis bins
-    df['Moneyness_Bin'] = df['Moneyness'].round(2)
-    
-    # Average the IV for options that share the same Expiration and Strike Bin
-    grid = df.groupby(['DTE', 'Moneyness_Bin'])['impliedVolatility'].mean().reset_index()
-    
-    # Pivot into a 2D matrix
-    pivot_grid = grid.pivot(index='DTE', columns='Moneyness_Bin', values='impliedVolatility')
-    
-    # Interpolate to fill empty holes in the surface so Plotly can render it smoothly
-    pivot_grid = pivot_grid.interpolate(method='linear', axis=1, limit_direction='both')
-    pivot_grid = pivot_grid.interpolate(method='linear', axis=0, limit_direction='both')
-    pivot_grid = pivot_grid.ffill().bfill()
-    
-    return pivot_grid
