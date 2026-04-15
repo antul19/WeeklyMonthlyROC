@@ -203,7 +203,6 @@ def fetch_volatility_surface(ticker_symbol: str) -> pd.DataFrame | None:
         tk = yf.Ticker(ticker_symbol)
         expirations = tk.options
         
-        # 1. Check if YF is providing dates at all
         if not expirations:
             print(f"DEBUG: Yahoo Finance returned no expiration dates for {ticker_symbol}.")
             return None
@@ -216,7 +215,6 @@ def fetch_volatility_surface(ticker_symbol: str) -> pd.DataFrame | None:
         current_price = hist['Close'].iloc[-1]
         data = []
         
-        # 2. Limit to 5 expirations to prevent severe API throttling
         for exp in expirations[:5]:
             try:
                 opt = tk.option_chain(exp)
@@ -228,7 +226,6 @@ def fetch_volatility_surface(ticker_symbol: str) -> pd.DataFrame | None:
                     df['Expiration'] = df['Expiration'].dt.tz_localize(None)
                 df['DTE'] = (df['Expiration'] - today).dt.days
                 
-                # RELAXED FILTER: We removed the strict IV > 0 filter here
                 df = df[df['openInterest'] > 0] 
                 data.append(df)
             except Exception as e:
@@ -242,10 +239,8 @@ def fetch_volatility_surface(ticker_symbol: str) -> pd.DataFrame | None:
         full_chain = pd.concat(data)
         full_chain['Moneyness'] = full_chain['strike'] / current_price
         
-        # 3. Widen the "Smile" region to catch more data points (±30%)
         clean_chain = full_chain[(full_chain['Moneyness'] >= 0.70) & (full_chain['Moneyness'] <= 1.30)]
         
-        # 4. Fallback check: Did YF zero out all the IVs because the market is closed?
         if clean_chain['impliedVolatility'].max() <= 0.01:
             print(f"DEBUG: YF is reporting 0% Implied Volatility across the board for {ticker_symbol}.")
             return None
@@ -255,3 +250,23 @@ def fetch_volatility_surface(ticker_symbol: str) -> pd.DataFrame | None:
     except Exception as e:
         print(f"Vol Surface Data Error: {e}")
         return None
+
+def compute_vol_surface_grid(df: pd.DataFrame) -> pd.DataFrame | None:
+    """Pivots the options data into a 3D matrix (X, Y) = Z"""
+    if df is None or df.empty: return None
+    
+    # Round moneyness to create uniform X-axis bins
+    df['Moneyness_Bin'] = df['Moneyness'].round(2)
+    
+    # Average the IV for options that share the same Expiration and Strike Bin
+    grid = df.groupby(['DTE', 'Moneyness_Bin'])['impliedVolatility'].mean().reset_index()
+    
+    # Pivot into a 2D matrix
+    pivot_grid = grid.pivot(index='DTE', columns='Moneyness_Bin', values='impliedVolatility')
+    
+    # Interpolate to fill empty holes in the surface so Plotly can render it smoothly
+    pivot_grid = pivot_grid.interpolate(method='linear', axis=1, limit_direction='both')
+    pivot_grid = pivot_grid.interpolate(method='linear', axis=0, limit_direction='both')
+    pivot_grid = pivot_grid.ffill().bfill()
+    
+    return pivot_grid
