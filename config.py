@@ -28,14 +28,7 @@ COLORS = {
     "oil":        "#00FF00",  
     "tnx":        "#B0C4DE",  
     "crisis_zone": "rgba(255, 68, 68, 0.12)",   
-    "war_zone":    "rgba(255, 165, 0, 0.15)",
-    "trend_current": "#FFFFFF",
-    "trend_avg": "#39FF14",
-    "trend_best": "rgba(0, 255, 128, 0.8)",
-    "trend_worst": "rgba(255, 64, 64, 0.8)",
-    
-    # Change this back to a solid hex color:
-    "trend_spaghetti": "#808080"
+    "war_zone":    "rgba(255, 165, 0, 0.15)"    
 }
 
 FINANCIAL_CRISES = [

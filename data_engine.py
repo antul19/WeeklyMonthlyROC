@@ -95,18 +95,11 @@ def compute_seasonality(roc_df: pd.DataFrame, timeframe: str, start_year: int) -
     cur_roc = cur_pivot.iloc[0] if not cur_pivot.empty else pd.Series(dtype=float)
     
     return {
-        "periods": periods, 
-        "avg_5": _avg(pv5), 
-        "avg_10": _avg(pv10), 
-        "avg_max": _avg(pivot),
-        "wr_5": _wr(pv5), 
-        "wr_10": _wr(pv10), 
-        "wr_max": _wr(pivot),
+        "periods": periods, "avg_5": _avg(pv5), "avg_10": _avg(pv10), "avg_max": _avg(pivot),
+        "wr_5": _wr(pv5), "wr_10": _wr(pv10), "wr_max": _wr(pivot),
         "cur_roc": cur_roc,
-        "pivot": pivot, 
-        "completed_years": sorted(hist_data["year"].unique()), 
-        "current_period": cur_period, 
-        "start_year": start_year
+        "pivot": pivot, "completed_years": sorted(hist_data["year"].unique()), 
+        "current_period": cur_period, "start_year": start_year
     }
 
 def compute_cycle_seasonality(roc_df: pd.DataFrame) -> dict:
@@ -163,6 +156,7 @@ def compute_rrg(df: pd.DataFrame) -> dict | None:
         "current_date": rs_ratio.index[-1].strftime("%b %d, %Y")
     }
 # --- ADD TO data_engine.py ---
+
 def build_rrg_table(rrg_data: dict) -> pd.DataFrame:
     """Compiles the Relative Rotation Graph data into a clean summary table."""
     ratio = rrg_data["ratio"]
@@ -200,3 +194,5 @@ def build_rrg_table(rrg_data: dict) -> pd.DataFrame:
     df = df.sort_values(by=['Order', 'RS-Ratio (Strength)'], ascending=[True, False]).drop(columns=['Order']).reset_index(drop=True)
     
     return df
+# --- ADD THIS TO THE BOTTOM OF data_engine.py ---
+
