@@ -45,6 +45,15 @@ def make_cumulative_chart(data: dict, window: str, show_spaghetti: bool, timefra
     COLOR_WORST = COLORS["trend_worst"]
     COLOR_SPAGHETTI = COLORS["trend_spaghetti"]
 
+    # --- NEW: Calculate cumulative paths directly from the pivot table ---
+    yearly_cum = {}
+    if "pivot" in data:
+        for yr in data["pivot"].columns:
+            # Drop empty weeks/months so the math works perfectly
+            s = data["pivot"][yr].dropna()
+            # Calculate the compounding return: (1 + ROC) * (1 + ROC) ...
+            yearly_cum[yr] = (1 + s / 100).cumprod() * 100 - 100
+
     # 1. Determine which years are included in this specific lookback window
     included_years = []
     if window == "5":
@@ -61,8 +70,8 @@ def make_cumulative_chart(data: dict, window: str, show_spaghetti: bool, timefra
     worst_return = float('inf')
 
     for yr in included_years:
-        if yr in data["yearly_cum"]:
-            final_val = data["yearly_cum"][yr].iloc[-1]
+        if yr in yearly_cum:
+            final_val = yearly_cum[yr].iloc[-1]
             if final_val > best_return:
                 best_return = final_val
                 best_year = yr
@@ -73,29 +82,29 @@ def make_cumulative_chart(data: dict, window: str, show_spaghetti: bool, timefra
     # 3. Plot the Spaghetti Lines (Background Years)
     if show_spaghetti:
         for yr in included_years:
-            if yr in data["yearly_cum"] and yr not in [best_year, worst_year]:
+            if yr in yearly_cum and yr not in [best_year, worst_year]:
                 fig.add_trace(go.Scatter(
-                    x=data["yearly_cum"][yr].index, 
-                    y=data["yearly_cum"][yr].values,
+                    x=yearly_cum[yr].index, 
+                    y=yearly_cum[yr].values,
                     mode='lines', line=dict(color=COLOR_SPAGHETTI, width=1), 
                     name=str(yr), showlegend=False, hoverinfo="skip"
                 ))
 
     # 4. Plot the "Worst" Year (Lower Bound)
-    if worst_year in data["yearly_cum"]:
+    if worst_year in yearly_cum:
         fig.add_trace(go.Scatter(
-            x=data["yearly_cum"][worst_year].index, 
-            y=data["yearly_cum"][worst_year].values,
+            x=yearly_cum[worst_year].index, 
+            y=yearly_cum[worst_year].values,
             mode='lines', line=dict(color=COLOR_WORST, width=2, dash='dot'), 
             name=f"Worst Year ({worst_year})",
             hovertemplate=f"Worst ({worst_year}): %{{y:.2f}}%<extra></extra>"
         ))
 
     # 5. Plot the "Best" Year (Upper Bound)
-    if best_year in data["yearly_cum"]:
+    if best_year in yearly_cum:
         fig.add_trace(go.Scatter(
-            x=data["yearly_cum"][best_year].index, 
-            y=data["yearly_cum"][best_year].values,
+            x=yearly_cum[best_year].index, 
+            y=yearly_cum[best_year].values,
             mode='lines', line=dict(color=COLOR_BEST, width=2, dash='dot'), 
             name=f"Best Year ({best_year})",
             hovertemplate=f"Best ({best_year}): %{{y:.2f}}%<extra></extra>"
@@ -128,7 +137,6 @@ def make_cumulative_chart(data: dict, window: str, show_spaghetti: bool, timefra
     layout = _base_layout(title)
     layout["xaxis"].update(title="Period", dtick=4 if timeframe == "Weekly" else 1)
     layout["yaxis"]["ticksuffix"] = "%"
-    # Adjust legend position so it doesn't cover the data
     layout["legend"] = dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     
     fig.update_layout(**layout)
