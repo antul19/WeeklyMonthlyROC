@@ -154,35 +154,4 @@ def make_rrg_chart(rrg_data: dict) -> go.Figure:
     return fig
 # --- ADD THIS TO THE BOTTOM OF plot_engine.py ---
 
-def make_volatility_surface_chart(pivot_grid: pd.DataFrame, ticker: str) -> go.Figure:
-    """Renders an interactive 3D Surface map of Implied Volatility."""
-    x = pivot_grid.columns.values  # Moneyness
-    y = pivot_grid.index.values    # Days to Expiration
-    z = pivot_grid.values          # Implied Volatility
-    
-    fig = go.Figure(data=[go.Surface(
-        z=z, x=x, y=y,
-        colorscale='Turbo', # Turbo provides a great heat-map contrast
-        colorbar=dict(title="Implied<br>Volatility", titleside="top", tickformat=".0%"),
-        hovertemplate="Moneyness (Strike/Spot): %{x:.2f}<br>DTE: %{y} Days<br>IV: %{z:.1%}<extra></extra>"
-    )])
-    
-    fig.update_layout(
-        title=dict(text=f"Live Volatility Surface • {ticker}", font=dict(family="IBM Plex Mono", size=20, color="#e8ecf5"), x=0.01),
-        template="plotly_dark",
-        paper_bgcolor="#0d0f14",
-        plot_bgcolor="#0d0f14",
-        margin=dict(l=0, r=0, b=0, t=80),
-        height=800,
-        scene=dict(
-            xaxis_title="Moneyness (1.0 = ATM)",
-            yaxis_title="Days to Expiration",
-            zaxis_title="Implied Volatility",
-            xaxis=dict(gridcolor="#1a1f2e", backgroundcolor="#0d0f14", tickformat=".2f"),
-            yaxis=dict(gridcolor="#1a1f2e", backgroundcolor="#0d0f14"),
-            zaxis=dict(gridcolor="#1a1f2e", backgroundcolor="#0d0f14", tickformat=".0%"),
-            # Set the default camera angle to view the "Smile" and the "Term Structure" simultaneously
-            camera=dict(eye=dict(x=-1.5, y=-1.5, z=0.5))
-        )
-    )
-    return fig
+
