@@ -86,8 +86,12 @@ def make_cumulative_chart(data: dict, window: str, show_spaghetti: bool, timefra
                 fig.add_trace(go.Scatter(
                     x=yearly_cum[yr].index, 
                     y=yearly_cum[yr].values,
-                    mode='lines', line=dict(color=COLOR_SPAGHETTI, width=1), 
-                    name=str(yr), showlegend=False, hoverinfo="skip"
+                    mode='lines', 
+                    line=dict(color=COLOR_SPAGHETTI, width=1), 
+                    opacity=0.3,  # <--- ADD OPACITY HERE
+                    name=str(yr), 
+                    showlegend=False, 
+                    hoverinfo="skip"
                 ))
 
     # 4. Plot the "Worst" Year (Lower Bound)
