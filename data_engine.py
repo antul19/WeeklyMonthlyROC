@@ -95,15 +95,18 @@ def compute_seasonality(roc_df: pd.DataFrame, timeframe: str, start_year: int) -
     cur_roc = cur_pivot.iloc[0] if not cur_pivot.empty else pd.Series(dtype=float)
     
     return {
-        "periods": periods, "avg_5": _avg(pv5), "avg_10": _avg(pv10), "avg_max": _avg(pivot),
-        "wr_5": _wr(pv5), "wr_10": _wr(pv10), "wr_max": _wr(pivot),
+        "periods": periods, 
+        "avg_5": _avg(pv5), 
+        "avg_10": _avg(pv10), 
+        "avg_max": _avg(pivot),
+        "wr_5": _wr(pv5), 
+        "wr_10": _wr(pv10), 
+        "wr_max": _wr(pivot),
         "cur_roc": cur_roc,
-        "pivot": pivot, "completed_years": sorted(hist_data["year"].unique()), 
-        "current_period": cur_period, "start_year": start_year
-        "periods": periods,
-        "avg_5": avg_5,
-        # ... what is the key for the historical years called here? ...
-        "completed_years": completed_years
+        "pivot": pivot, 
+        "completed_years": sorted(hist_data["year"].unique()), 
+        "current_period": cur_period, 
+        "start_year": start_year
     }
 
 def compute_cycle_seasonality(roc_df: pd.DataFrame) -> dict:
