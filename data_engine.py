@@ -160,7 +160,6 @@ def compute_rrg(df: pd.DataFrame) -> dict | None:
         "current_date": rs_ratio.index[-1].strftime("%b %d, %Y")
     }
 # --- ADD TO data_engine.py ---
-
 def build_rrg_table(rrg_data: dict) -> pd.DataFrame:
     """Compiles the Relative Rotation Graph data into a clean summary table."""
     ratio = rrg_data["ratio"]
@@ -198,5 +197,3 @@ def build_rrg_table(rrg_data: dict) -> pd.DataFrame:
     df = df.sort_values(by=['Order', 'RS-Ratio (Strength)'], ascending=[True, False]).drop(columns=['Order']).reset_index(drop=True)
     
     return df
-# --- ADD THIS TO THE BOTTOM OF data_engine.py ---
-
