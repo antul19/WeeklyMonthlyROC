@@ -33,7 +33,9 @@ COLORS = {
     "trend_avg": "#39FF14",
     "trend_best": "rgba(0, 255, 128, 0.8)",
     "trend_worst": "rgba(255, 64, 64, 0.8)",
-    "trend_spaghetti": "rgba(255, 255, 255, 0.08)"
+    
+    # Change this back to a solid hex color:
+    "trend_spaghetti": "#808080"
 }
 
 FINANCIAL_CRISES = [
