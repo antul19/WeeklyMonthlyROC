@@ -100,6 +100,10 @@ def compute_seasonality(roc_df: pd.DataFrame, timeframe: str, start_year: int) -
         "cur_roc": cur_roc,
         "pivot": pivot, "completed_years": sorted(hist_data["year"].unique()), 
         "current_period": cur_period, "start_year": start_year
+        "periods": periods,
+        "avg_5": avg_5,
+        # ... what is the key for the historical years called here? ...
+        "completed_years": completed_years
     }
 
 def compute_cycle_seasonality(roc_df: pd.DataFrame) -> dict:
