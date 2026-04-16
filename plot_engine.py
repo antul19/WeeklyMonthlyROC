@@ -36,12 +36,14 @@ def make_cumulative_chart(data: dict, window: str, show_spaghetti: bool, timefra
     """Renders the compounding historical trajectory, highlighting best/worst years."""
     fig = go.Figure()
     
-    # Define color scheme based on your preferences
-    COLOR_CURRENT = "#FFFFFF"     # Bright White for the current year
-    COLOR_AVG = "#39FF14"         # Neon Green for the historical average
-    COLOR_BEST = "rgba(0, 255, 128, 0.8)"  # Soft Green for the best year
-    COLOR_WORST = "rgba(255, 64, 64, 0.8)" # Soft Red for the worst year
-    COLOR_SPAGHETTI = "rgba(255, 255, 255, 0.08)" # Very faded grey/white for background years
+    # ─────────────────────────────────────────────
+    # Pull colors from config.py
+    # ─────────────────────────────────────────────
+    COLOR_CURRENT = COLORS["trend_current"]
+    COLOR_AVG = COLORS["trend_avg"]
+    COLOR_BEST = COLORS["trend_best"]
+    COLOR_WORST = COLORS["trend_worst"]
+    COLOR_SPAGHETTI = COLORS["trend_spaghetti"]
 
     # 1. Determine which years are included in this specific lookback window
     included_years = []
