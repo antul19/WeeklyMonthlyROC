@@ -20,8 +20,7 @@ from data_engine import (
     fetch_sector_data, 
     compute_rrg, 
     build_rrg_table,
-    fetch_volatility_surface,
-    compute_vol_surface_grid
+    
 )
 from plot_engine import (
     make_bar_chart, 
@@ -29,7 +28,6 @@ from plot_engine import (
     make_presidential_cycle_chart, 
     make_rebased_macro_chart, 
     make_rrg_chart,
-    make_volatility_surface_chart
 )
 
 # ─────────────────────────────────────────────
