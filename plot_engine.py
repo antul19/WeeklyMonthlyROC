@@ -32,36 +32,106 @@ def make_bar_chart(data: dict, window_key: str, show_winrate: bool, timeframe: s
     fig.update_layout(**layout)
     return fig
 
-def make_cumulative_chart(data: dict, window_key: str, show_spaghetti: bool, timeframe: str, title: str) -> go.Figure:
-    avg, cur, pivot, periods, cur_p = data[f"avg_{window_key}"], data["cur_roc"], data["pivot"], data["periods"], data["current_period"]
+def make_cumulative_chart(data: dict, window: str, show_spaghetti: bool, timeframe: str, title: str) -> go.Figure:
+    """Renders the compounding historical trajectory, highlighting best/worst years."""
+    fig = go.Figure()
     
-    def _cum(s):
-        c, r = [0.0], 100.0
-        for p in periods:
-            v = s.get(p, np.nan)
-            if pd.isna(v): c.append(c[-1])
-            else: r *= (1 + v/100); c.append(r - 100.0)
-        return c
-        
-    fig, x_anchor = go.Figure(), [0] + periods
-    if show_spaghetti:
-        yrs = sorted(pivot.index.tolist())[-5:] if window_key == "5" else (sorted(pivot.index.tolist())[-10:] if window_key == "10" else sorted(pivot.index.tolist()))
-        for i, yr in enumerate(yrs):
-            fig.add_trace(go.Scatter(x=x_anchor, y=_cum(pivot.loc[yr] if yr in pivot.index else pd.Series(dtype=float)), mode="lines", line=dict(color=COLORS["spaghetti"]), showlegend=(i==0), name="Past Years" if i==0 else None))
-            
-    fig.add_trace(go.Scatter(x=x_anchor, y=_cum(avg), mode="lines", line=dict(color=COLORS["avg_line"], width=3.5), name="Hist. Avg"))
-    cur_x = [p for p in periods if p in cur.index]
-    if cur_x:
-        fig.add_trace(go.Scatter(x=x_anchor[:len(cur_x)+1], y=_cum(pd.Series({p: cur.get(p, np.nan) for p in periods}))[:len(cur_x)+1], mode="lines+markers", line=dict(color=COLORS["cur_year"], width=3), name=f"{CURRENT_YEAR} Actual"))
+    # Define color scheme based on your preferences
+    COLOR_CURRENT = "#FFFFFF"     # Bright White for the current year
+    COLOR_AVG = "#39FF14"         # Neon Green for the historical average
+    COLOR_BEST = "rgba(0, 255, 128, 0.8)"  # Soft Green for the best year
+    COLOR_WORST = "rgba(255, 64, 64, 0.8)" # Soft Red for the worst year
+    COLOR_SPAGHETTI = "rgba(255, 255, 255, 0.08)" # Very faded grey/white for background years
 
-    if cur_p in x_anchor: fig.add_vline(x=cur_p, line_dash="dash", line_color=COLORS["vline"])
-    
+    # 1. Determine which years are included in this specific lookback window
+    included_years = []
+    if window == "5":
+        included_years = [y for y in data["completed_years"] if y >= CURRENT_YEAR - 5]
+    elif window == "10":
+        included_years = [y for y in data["completed_years"] if y >= CURRENT_YEAR - 10]
+    else:
+        included_years = data["completed_years"]
+
+    # 2. Find the "Best" and "Worst" year based on final cumulative return
+    best_year = None
+    worst_year = None
+    best_return = -float('inf')
+    worst_return = float('inf')
+
+    for yr in included_years:
+        if yr in data["yearly_cum"]:
+            final_val = data["yearly_cum"][yr].iloc[-1]
+            if final_val > best_return:
+                best_return = final_val
+                best_year = yr
+            if final_val < worst_return:
+                worst_return = final_val
+                worst_year = yr
+
+    # 3. Plot the Spaghetti Lines (Background Years)
+    if show_spaghetti:
+        for yr in included_years:
+            if yr in data["yearly_cum"] and yr not in [best_year, worst_year]:
+                fig.add_trace(go.Scatter(
+                    x=data["yearly_cum"][yr].index, 
+                    y=data["yearly_cum"][yr].values,
+                    mode='lines', line=dict(color=COLOR_SPAGHETTI, width=1), 
+                    name=str(yr), showlegend=False, hoverinfo="skip"
+                ))
+
+    # 4. Plot the "Worst" Year (Lower Bound)
+    if worst_year in data["yearly_cum"]:
+        fig.add_trace(go.Scatter(
+            x=data["yearly_cum"][worst_year].index, 
+            y=data["yearly_cum"][worst_year].values,
+            mode='lines', line=dict(color=COLOR_WORST, width=2, dash='dot'), 
+            name=f"Worst Year ({worst_year})",
+            hovertemplate=f"Worst ({worst_year}): %{{y:.2f}}%<extra></extra>"
+        ))
+
+    # 5. Plot the "Best" Year (Upper Bound)
+    if best_year in data["yearly_cum"]:
+        fig.add_trace(go.Scatter(
+            x=data["yearly_cum"][best_year].index, 
+            y=data["yearly_cum"][best_year].values,
+            mode='lines', line=dict(color=COLOR_BEST, width=2, dash='dot'), 
+            name=f"Best Year ({best_year})",
+            hovertemplate=f"Best ({best_year}): %{{y:.2f}}%<extra></extra>"
+        ))
+
+    # 6. Plot the Historical Average Line
+    avg_key = f"avg_{window}"
+    if len(data[avg_key]) > 0:
+        s = pd.Series(data[avg_key])
+        comp = (1 + s / 100).cumprod() * 100 - 100
+        fig.add_trace(go.Scatter(
+            x=comp.index, y=comp.values, 
+            mode='lines', line=dict(color=COLOR_AVG, width=3), 
+            name=f"Historical Average",
+            hovertemplate="Average: %{y:.2f}%<extra></extra>"
+        ))
+
+    # 7. Plot the Current Year (Front & Center)
+    if len(data["cur_roc"]) > 0:
+        s = pd.Series(data["cur_roc"])
+        comp = (1 + s / 100).cumprod() * 100 - 100
+        fig.add_trace(go.Scatter(
+            x=comp.index, y=comp.values, 
+            mode='lines+markers', line=dict(color=COLOR_CURRENT, width=4), 
+            marker=dict(size=6), name=str(CURRENT_YEAR),
+            hovertemplate=f"{CURRENT_YEAR}: %{{y:.2f}}%<extra></extra>"
+        ))
+
+    # 8. Apply Layout Formatting
     layout = _base_layout(title)
-    layout["xaxis"].update(title="Week" if timeframe == "Weekly" else "Month", dtick=1, range=[-0.5, (52 if timeframe=="Weekly" else 12) + 0.5])
+    layout["xaxis"].update(title="Period", dtick=4 if timeframe == "Weekly" else 1)
     layout["yaxis"]["ticksuffix"] = "%"
+    # Adjust legend position so it doesn't cover the data
+    layout["legend"] = dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    
     fig.update_layout(**layout)
     return fig
-
+    
 def make_presidential_cycle_chart(cycle_data: dict) -> go.Figure:
     avg_roc, cur_roc, start_yr = cycle_data["avg_roc"], cycle_data["cur_roc"], cycle_data["current_cycle_start"]
     periods, x_anchor = list(range(1, 49)), [0] + list(range(1, 49))
